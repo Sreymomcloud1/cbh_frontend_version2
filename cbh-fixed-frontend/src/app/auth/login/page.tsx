@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, Leaf } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -9,12 +9,19 @@ import Input from "@/components/ui/Input";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
+
+  const redirectParam = searchParams.get("redirect");
+  const safeRedirect =
+    redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+      ? redirectParam
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -94,7 +101,9 @@ export default function LoginPage() {
 
   router.refresh();
 
-  if (dbRole === "admin") {
+  if (safeRedirect) {
+    router.push(safeRedirect);
+  } else if (dbRole === "admin") {
     router.push("/admin");
   } else if (dbRole === "business" || isPending) {
     router.push("/business-dashboard");

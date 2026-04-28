@@ -10,6 +10,7 @@ import Link from "next/link";
 
 const topics = ["General", "Supplier Issue", "Request Problem", "Suggestion", "Partnership", "Other"];
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const SESSION_TIMEOUT_MS = 5000;
 
 export default function FeedbackForm() {
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -25,41 +26,67 @@ export default function FeedbackForm() {
 
   // Keep feedback identity synced with profile/account data
   useEffect(() => {
+    let mounted = true;
+    const safeSet = (fn: () => void) => { if (mounted) fn(); };
+
+    const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          setTimeout(() => reject(new Error("Session check timed out")), timeoutMs);
+        }),
+      ]);
+
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          SESSION_TIMEOUT_MS
+        );
         if (!session) {
-          setIsLoggedIn(false);
-          setToken(null);
+          safeSet(() => {
+            setIsLoggedIn(false);
+            setToken(null);
+          });
           return;
         }
 
-        setIsLoggedIn(true);
-        setToken(session.access_token);
+        safeSet(() => {
+          setIsLoggedIn(true);
+          setToken(session.access_token);
+        });
 
         try {
           const profile = await getProfile();
-          setForm((p) => ({
-            ...p,
-            name: profile.name || session.user.user_metadata?.name || "",
-            email: profile.email || session.user.email || "",
-          }));
+          safeSet(() => {
+            setForm((p) => ({
+              ...p,
+              name: profile.name || session.user.user_metadata?.name || "",
+              email: profile.email || session.user.email || "",
+            }));
+          });
         } catch {
-          setForm((p) => ({
-            ...p,
-            name: session.user.user_metadata?.name || p.name || "",
-            email: session.user.email || p.email || "",
-          }));
+          safeSet(() => {
+            setForm((p) => ({
+              ...p,
+              name: session.user.user_metadata?.name || p.name || "",
+              email: session.user.email || p.email || "",
+            }));
+          });
         }
       } catch {
-        setIsLoggedIn(false);
-        setToken(null);
+        safeSet(() => {
+          setIsLoggedIn(false);
+          setToken(null);
+        });
       } finally {
-        setSessionChecked(true);
+        safeSet(() => setSessionChecked(true));
       }
     };
 
     init();
+
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => onProfileUpdated((detail) => {
@@ -72,6 +99,7 @@ export default function FeedbackForm() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionChecked(true);
       if (!session?.user) {
         setIsLoggedIn(false);
         setToken(null);
