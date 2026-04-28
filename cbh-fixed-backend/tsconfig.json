@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    /* Added 'dom' so TS recognizes fetch, window, and FormData */
+    "lib": ["ES2022", "dom", "dom.iterable"],
+
+    "outDir": "./dist",
+    "rootDir": "./src",
+
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+
+    /* FIXED: Removed baseUrl. 
+      Modern TS resolves paths relative to the tsconfig file location.
+    */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* FIXED: Added 'node' types explicitly for process.env 
+    */
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types", "./src/types"]
+  },
+
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
