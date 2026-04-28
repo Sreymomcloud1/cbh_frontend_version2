@@ -6,6 +6,7 @@ import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucid
 import { supabase } from "@/lib/supabase";
 import { listMyConversations } from "@/lib/api"; // Step 2: Added import
 import { onProfileUpdated } from "@/lib/data-events";
+import { logoutAndRefresh } from "@/lib/logout";
 import Button from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -175,9 +176,10 @@ export default function Navbar() {
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
     setUserMenuOpen(false);
-    router.push("/");
+    setAuthUser(null);
+    setUnreadCount(0);
+    await logoutAndRefresh("/");
   };
 
   const dashboardHref =

@@ -22,6 +22,7 @@ const purposes = [
 ];
 const quantityOptions = ["10–50 units", "50–200 units", "200–500 units", "500–1000 units", "1000+ units", "Custom"];
 const locationOptions = ["Phnom Penh", "Siem Reap", "Kampot", "Battambang", "Sihanoukville", "Kampong Cham", "Other"];
+const REQUEST_TIMEOUT_MS = 15000;
 
 export default function RequestForm({
   defaultSupplierId,
@@ -99,14 +100,22 @@ export default function RequestForm({
       };
 
       const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
-      const res = await fetch(`${BASE_URL}/requests`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(`${BASE_URL}/requests`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Failed to submit request");
@@ -115,7 +124,11 @@ export default function RequestForm({
       notifyBusinessDataChanged({ id: payload.business_id ?? undefined, action: "created" });
       setSubmitted(true);
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : "Failed to submit request.");
+      if (err instanceof Error && err.name === "AbortError") {
+        setApiError("Request timed out. Please try again.");
+      } else {
+        setApiError(err instanceof Error ? err.message : "Failed to submit request.");
+      }
     } finally {
       setLoading(false);
     }

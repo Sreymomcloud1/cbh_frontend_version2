@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
+import { logoutAndRefresh } from "@/lib/logout";
 //import { Users, Clock } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -518,8 +519,7 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    await logoutAndRefresh("/");
   };
 
   const pendingBiz   = businesses.filter(b => b.verification_status === "pending");

@@ -24,6 +24,22 @@ import type {
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(input: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // ─── Core request helper ──────────────────────────────────────────────────────
 
@@ -45,7 +61,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error("Not authenticated");
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
+  const res = await fetchWithTimeout(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
   const json = await res.json();
 
   if (!res.ok) {
@@ -66,7 +82,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // ─── Public request helper (no auth required) ─────────────────────────────────
 // Use for public endpoints: GET /businesses, GET /businesses/:id
 async function publicRequest<T>(path: string): Promise<T> {
-  const res  = await fetch(`${BASE_URL}${path}`, {
+  const res  = await fetchWithTimeout(`${BASE_URL}${path}`, {
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
   });
@@ -399,7 +415,7 @@ async function uploadFile(
     Object.entries(extraFields).forEach(([k, v]) => form.append(k, v));
   }
 
-  const res = await fetch(`${BASE_URL}/upload/${endpoint}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/upload/${endpoint}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -428,7 +444,7 @@ export async function uploadBusinessGalleryImage(file: File, businessId: string)
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 export async function resendVerificationEmail(email: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/auth/resend-verification`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/auth/resend-verification`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, type: "signup" }),
@@ -440,7 +456,7 @@ export async function resendVerificationEmail(email: string): Promise<void> {
 }
 
 export async function forgotPassword(email: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/auth/forgot-password`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
