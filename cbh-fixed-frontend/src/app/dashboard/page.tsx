@@ -10,9 +10,10 @@ import {
 } from "lucide-react";
 import {
   getProfile, listMyRequests, updateProfile, deleteAccount,
-  listMyConversations, updateConversationStatus, createReview, getBusinessById,
+  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor } from "@/lib/utils";
+import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged } from "@/lib/data-events";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
 import type { User, QuoteRequest } from "@/types";
 import Link from "next/link";
@@ -176,9 +177,10 @@ useEffect(() => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [profile, { requests: reqs }] = await Promise.all([
+      const [profile, { requests: reqs }, savedRows] = await Promise.all([
         getProfile(),
         listMyRequests({ limit: 50 }),
+        getSavedBusinesses().catch(() => []),
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = profile as any;
@@ -189,14 +191,15 @@ useEffect(() => {
       setSName(profile.name);
       setSEmail(p.email ?? profile.email ?? "");
       setSPhone(p.phone ?? p.phone_number ?? "");
-      const ids = (profile.savedSuppliers ?? []) as string[];
-      setSavedIds(ids);
-      // Load names for saved businesses
-      if (ids.length > 0) {
-        Promise.all(ids.map(id =>
-          getBusinessById(id).then(b => ({ id, name: b.name })).catch(() => ({ id, name: id }))
-        )).then(results => setSavedNames(Object.fromEntries(results.map(r => [r.id, r.name]))));
-      }
+      const ids = savedRows
+        .map((row) => (row as { business?: { id?: string } | null }).business?.id)
+        .filter((id): id is string => Boolean(id));
+      const savedBusinesses = await Promise.all(ids.map(id =>
+        getBusinessById(id).then(b => ({ id, name: b.name })).catch(() => null)
+      ));
+      const activeSaved = savedBusinesses.filter((b): b is { id: string; name: string } => Boolean(b));
+      setSavedIds(activeSaved.map(b => b.id));
+      setSavedNames(Object.fromEntries(activeSaved.map(b => [b.id, b.name])));
     } catch (err) {
   console.error("Dashboard load error:", err);
 
@@ -213,6 +216,26 @@ useEffect(() => {
   }, [router]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const unsubscribe = onBusinessDataChanged(load);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
+
+  useEffect(() => onProfileUpdated((detail) => {
+    if (!detail) return;
+    if (detail.name) {
+      setDisplayName(detail.name);
+      setSName(detail.name);
+      setUser(prev => prev ? { ...prev, name: detail.name ?? prev.name } : prev);
+    }
+    if (detail.avatarUrl) setAvatarUrl(detail.avatarUrl);
+  }), []);
 
   // Poll unread message count every 30s
   useEffect(() => {
@@ -268,7 +291,7 @@ useEffect(() => {
       await updateProfile({ avatar_url: fresh });
       setAvatarUrl(fresh);
       showToast("Photo updated.", true);
-      window.dispatchEvent(new CustomEvent("cbh:profile-updated", { detail: { avatarUrl: fresh } }));
+      notifyProfileUpdated({ avatarUrl: fresh });
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Upload failed.", false);
     } finally {
@@ -292,9 +315,7 @@ useEffect(() => {
       } else {
         showToast("Profile saved.", true);
       }
-      window.dispatchEvent(new CustomEvent("cbh:profile-updated", {
-        detail: { name: sName.trim(), avatarUrl },
-      }));
+      notifyProfileUpdated({ name: sName.trim(), avatarUrl });
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Save failed.", false);
     } finally {
@@ -579,7 +600,7 @@ useEffect(() => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {savedIds.map(id => (
-                    <Link key={id} href={`/supplier/${id}`}
+                    <Link key={id} href={freshSupplierHref(id)} prefetch={false}
                       className="flex items-center gap-3 bg-white border border-surface-200 rounded-2xl p-4 hover:border-brand-300 hover:shadow-soft transition-all group">
                       <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
                         <Heart className="w-5 h-5 text-brand-600" />

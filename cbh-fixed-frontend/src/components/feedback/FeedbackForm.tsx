@@ -1,17 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { CheckCircle, Star, Lock } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { supabase } from "@/lib/supabase";
+import { getProfile } from "@/lib/api";
+import { onProfileUpdated } from "@/lib/data-events";
 import Link from "next/link";
 
 const topics = ["General", "Supplier Issue", "Request Problem", "Suggestion", "Partnership", "Other"];
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 export default function FeedbackForm() {
-  const router = useRouter();
   const [sessionChecked, setSessionChecked] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", topic: "", subject: "", message: "", rating: 0 });
@@ -23,20 +23,68 @@ export default function FeedbackForm() {
 
   const set = (key: string, value: string | number) => setForm((p) => ({ ...p, [key]: value }));
 
-  // Pre-fill name and email from logged-in session
+  // Keep feedback identity synced with profile/account data
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSessionChecked(true);
-      if (!session) { setIsLoggedIn(false); return; }
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setIsLoggedIn(false);
+          setToken(null);
+          return;
+        }
+
+        setIsLoggedIn(true);
+        setToken(session.access_token);
+
+        try {
+          const profile = await getProfile();
+          setForm((p) => ({
+            ...p,
+            name: profile.name || session.user.user_metadata?.name || "",
+            email: profile.email || session.user.email || "",
+          }));
+        } catch {
+          setForm((p) => ({
+            ...p,
+            name: session.user.user_metadata?.name || p.name || "",
+            email: session.user.email || p.email || "",
+          }));
+        }
+      } catch {
+        setIsLoggedIn(false);
+        setToken(null);
+      } finally {
+        setSessionChecked(true);
+      }
+    };
+
+    init();
+  }, []);
+
+  useEffect(() => onProfileUpdated((detail) => {
+    if (!detail?.name && !detail?.avatarUrl) return;
+    setForm((p) => ({
+      ...p,
+      name: detail.name ?? p.name,
+    }));
+  }), []);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setIsLoggedIn(false);
+        setToken(null);
+        return;
+      }
       setIsLoggedIn(true);
       setToken(session.access_token);
-      const meta = session.user.user_metadata;
-      setForm(p => ({
+      setForm((p) => ({
         ...p,
-        name:  meta?.name  || p.name  || "",
         email: session.user.email || p.email || "",
       }));
     });
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleSubmit = async () => {

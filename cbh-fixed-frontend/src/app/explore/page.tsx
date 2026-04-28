@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, SlidersHorizontal, X, Handshake, TrendingUp } from "lucide-react";
 import SupplierCard from "@/components/supplier/SupplierCard";
@@ -8,6 +8,7 @@ import { listBusinesses } from "@/lib/api";
 import type { FilterState, Supplier } from "@/types";
 import Button from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { onBusinessDataChanged } from "@/lib/data-events";
 
 // Static category + location data (UI chrome only — not business data)
 const CATEGORIES = [
@@ -39,7 +40,9 @@ function ExploreContent() {
 
   const [fetchError, setFetchError] = useState("");
 
-  useEffect(() => {
+  const loadBusinesses = useCallback(() => {
+    setLoading(true);
+    setFetchError("");
     listBusinesses({ limit: 50 })
       .then(({ suppliers: data }) => {
         setSuppliers(data);
@@ -52,6 +55,20 @@ function ExploreContent() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadBusinesses();
+  }, [loadBusinesses]);
+
+  useEffect(() => {
+    const unsubscribe = onBusinessDataChanged(loadBusinesses);
+    const onFocus = () => loadBusinesses();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadBusinesses]);
 
   // 1. Add this useEffect to sync URL changes to state
   useEffect(() => {

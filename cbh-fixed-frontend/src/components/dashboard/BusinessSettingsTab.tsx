@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { updateProfile, updateBusiness } from "@/lib/api";
+import { notifyBusinessDataChanged } from "@/lib/data-events";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import type { Supplier } from "@/types";
@@ -44,6 +45,7 @@ export default function BusinessSettingsTab({ biz, onLogout }: Props) {
         notify_by_phone: notifyPhone,
       } as Parameters<typeof updateBusiness>[1]);
       await updateProfile({ phone: phone || null });
+      notifyBusinessDataChanged({ id: biz.id, action: "updated" });
       setProfileMsg("Business settings saved.");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Failed to save.");

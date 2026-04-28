@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Hero from "@/components/home/Hero";
 import Categories from "@/components/home/Categories";
 import HowItWorks from "@/components/home/HowItWorks";
@@ -11,6 +11,8 @@ import Link from "next/link";
 import Button from "@/components/ui/Button";
 import { Clock, ShieldCheck, BarChart2, Package, Leaf, Target, Globe } from "lucide-react";
 import type { Supplier } from "@/types";
+import { listBusinesses } from "@/lib/api";
+import { onBusinessDataChanged } from "@/lib/data-events";
 
 const whyCards = [
   { icon: Clock,       title: "Save Time",          description: "Find and compare multiple suppliers in one place instead of searching everywhere.",        color: "bg-blue-50 text-blue-600"   },
@@ -25,51 +27,39 @@ const values = [
   { icon: Globe,  label: "Transparency", desc: "Clear eco scores, pricing, and supplier profiles — no surprises."                 },
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformBusiness(b: any): Supplier {
-  return {
-    id: b.id, name: b.name, tagline: b.tagline ?? "", description: b.description ?? "",
-    category: b.category, subCategories: b.sub_categories ?? [], tier: b.tier,
-    location: b.location_city, locationDetail: b.location_detail ?? "",
-    logo: b.logo_url ?? "", gallery: b.gallery_urls ?? [],
-    ecoScore: { overall: b.eco_score_overall ?? 0, level: b.eco_level ?? "Basic", breakdown: b.eco_breakdown ?? {} },
-    discountPercent: b.discount_percent ?? null,
-    bulkSupport: b.bulk_support ?? false, bulkCapacity: b.bulk_capacity ?? null,
-    verified: b.is_verified ?? false, tags: b.tags ?? [], services: b.services ?? [],
-    contactEmail: b.contact_email ?? "", contactPhone: b.contact_phone ?? "",
-    rating: b.rating ?? 0, reviewCount: b.review_count ?? 0,
-    collaboration: { enabled: b.open_for_collaboration ?? false, lookingFor: b.collaboration_types ?? [] },
-    investment: { enabled: b.open_for_investment ?? false },
-  };
-}
-
 export default function HomePage() {
   const [loading,  setLoading]  = useState(true);
   // Start with 3 mock suppliers so the section is never empty
   const [featured, setFeatured] = useState<Supplier[]>(mockSuppliers.slice(0, 3));
 
+  const loadFeatured = useCallback(async () => {
+    try {
+      const { suppliers: real } = await listBusinesses({ limit: 6 });
+      if (real.length > 0) {
+        // Real businesses first, fill remainder with mock if fewer than 3
+        const realNames = new Set(real.map(r => r.name.toLowerCase()));
+        const mockFill  = mockSuppliers.filter(m => !realNames.has(m.name.toLowerCase()));
+        setFeatured([...real, ...mockFill].slice(0, 3));
+      }
+    } catch {
+      // keep mock data on failure — already set as default
+    }
+  }, []);
+
   // Fetch real featured businesses from API, merge with mock as fallback
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"}/businesses?limit=6`
-        );
-        if (!res.ok) return;
-        const json = await res.json();
-        const real: Supplier[] = (json.data?.businesses ?? []).map(transformBusiness);
-        if (real.length > 0) {
-          // Real businesses first, fill remainder with mock if fewer than 3
-          const realNames = new Set(real.map(r => r.name.toLowerCase()));
-          const mockFill  = mockSuppliers.filter(m => !realNames.has(m.name.toLowerCase()));
-          setFeatured([...real, ...mockFill].slice(0, 3));
-        }
-      } catch {
-        // keep mock data on failure — already set as default
-      }
+    loadFeatured();
+  }, [loadFeatured]);
+
+  useEffect(() => {
+    const unsubscribe = onBusinessDataChanged(loadFeatured);
+    const onFocus = () => loadFeatured();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", onFocus);
     };
-    load();
-  }, []);
+  }, [loadFeatured]);
 
   return (
     <>

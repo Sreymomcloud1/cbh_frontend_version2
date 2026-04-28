@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 //import { Users, Clock } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -88,6 +89,7 @@ async function adminFetch(path: string, options: RequestInit = {}) {
   const token = await getAccessToken();
   const res = await fetch(`${API}${path}`, {
     ...options,
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
@@ -429,6 +431,16 @@ export default function AdminPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  useEffect(() => {
+    const unsubscribe = onBusinessDataChanged(loadAll);
+    const onFocus = () => loadAll();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadAll]);
+
   // Open business detail modal (fetches full data)
   const openDetail = async (id: string) => {
     const res = await adminFetch(`/admin/businesses/${id}`);
@@ -444,6 +456,10 @@ export default function AdminPage() {
     });
     setActionId(null);
     if (res.success) {
+      notifyBusinessDataChanged({
+        id,
+        action: action === "verify" ? "verified" : action === "revoke" ? "revoked" : "updated",
+      });
       showToast(
         action === "verify" ? "Business verified and published ✓" :
         action === "reject" ? "Business rejected." : "Verification revoked.",
@@ -471,6 +487,7 @@ export default function AdminPage() {
   });
   setAddBizSaving(false);
   if (res.success) {
+    notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
     showToast("Business added and published ✓", true);
     setShowAddBiz(false);
     setAddBizForm({ name:"", tagline:"", description:"", category:"", tier:"SME",

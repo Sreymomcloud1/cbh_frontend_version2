@@ -45,7 +45,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error("Not authenticated");
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
   const json = await res.json();
 
   if (!res.ok) {
@@ -67,6 +67,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // Use for public endpoints: GET /businesses, GET /businesses/:id
 async function publicRequest<T>(path: string): Promise<T> {
   const res  = await fetch(`${BASE_URL}${path}`, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
   });
   const json = await res.json();

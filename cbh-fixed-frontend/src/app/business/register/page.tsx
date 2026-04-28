@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { createBusiness } from "@/lib/api";
+import { notifyBusinessDataChanged } from "@/lib/data-events";
 import type { BusinessCategory, BusinessTier, CollaborationType, CreateBusinessPayload } from "@/types";
 
 type Step = 1 | 2 | 3 | 4;
@@ -117,7 +118,8 @@ export default function BusinessRegisterPage() {
         founded_year:              form.foundedYear ? Number(form.foundedYear) : null,
       } as CreateBusinessPayload;
 
-      await createBusiness(payload);
+      const business = await createBusiness(payload);
+      notifyBusinessDataChanged({ id: business.id, action: "created" });
       setSubmitted(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to register business.";

@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Send, X, Store, MapPin, Leaf } from "lucide-react";
 import { heroBanners } from "@/data/mockData";
 import { cn } from "@/lib/utils";
+import { freshSupplierHref } from "@/lib/data-events";
 
 // Suggested quick-start prompts shown in the chatbot
 const QUICK_PROMPTS = [
@@ -291,7 +292,7 @@ Rules:
                               </div>
                             </div>
                             <button
-                              onClick={() => { setShowChat(false); router.push(`/supplier/${s.id}`); }}
+                              onClick={() => { setShowChat(false); router.push(freshSupplierHref(s.id)); }}
                               className="text-xs text-brand-600 font-medium hover:underline shrink-0"
                             >
                               View →

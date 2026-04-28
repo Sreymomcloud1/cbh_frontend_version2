@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/lib/api";
+import { notifyProfileUpdated } from "@/lib/data-events";
 import Button from "@/components/ui/Button";
 import type { User } from "@/types";
 import { Phone, Mail, User as UserIcon, Lock, CheckCircle, Camera, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
@@ -82,6 +83,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
 
       // Tell navbar to update immediately — no refresh needed
       onUpdate?.({ avatarUrl: freshUrl });
+      notifyProfileUpdated({ avatarUrl: freshUrl });
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Photo upload failed.");
       setAvatarPreview(user.avatar ?? "");
@@ -107,6 +109,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
       }
       // Update navbar name immediately
       onUpdate?.({ name: name.trim() });
+      notifyProfileUpdated({ name: name.trim() });
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Failed to save profile.");
     } finally {

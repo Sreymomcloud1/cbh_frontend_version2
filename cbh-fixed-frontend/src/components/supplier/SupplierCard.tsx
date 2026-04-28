@@ -1,14 +1,20 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MapPin, CheckCircle, Leaf, Package, Handshake, TrendingUp } from "lucide-react";
 import type { Supplier } from "@/types";
 import Button from "@/components/ui/Button";
 import { ecoScoreBg, cn } from "@/lib/utils";
+import { freshSupplierHref } from "@/lib/data-events";
 
 interface SupplierCardProps {
   supplier: Supplier;
 }
 
 export default function SupplierCard({ supplier }: SupplierCardProps) {
+  const router = useRouter();
+
   return (
     <div className="bg-white rounded-2xl border border-surface-200 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 overflow-hidden group flex flex-col">
       {/* Image */}
@@ -76,9 +82,14 @@ export default function SupplierCard({ supplier }: SupplierCardProps) {
         </div>
 
         <div className="flex gap-2 mt-auto pt-1">
-          <Link href={`/supplier/${supplier.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full text-xs">View</Button>
-          </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 w-full text-xs"
+            onClick={() => router.push(freshSupplierHref(supplier.id))}
+          >
+            View
+          </Button>
           <Link href={`/request?supplier=${supplier.id}&name=${encodeURIComponent(supplier.name)}`} className="flex-1">
             <Button variant="primary" size="sm" className="w-full text-xs">Request Quote</Button>
           </Link>

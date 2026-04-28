@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { listMyConversations } from "@/lib/api"; // Step 2: Added import
+import { onProfileUpdated } from "@/lib/data-events";
 import Button from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -79,14 +80,14 @@ export default function Navbar() {
 
   // Listen for profile updates
   useEffect(() => {
-    const onProfileUpdated = (e: any) => {
-      if (e.detail?.name || e.detail?.avatarUrl) {
+    const unsubscribe = onProfileUpdated((detail) => {
+      if (detail?.name || detail?.avatarUrl) {
         setAuthUser(prev => prev ? {
           ...prev,
-          name: e.detail.name ?? prev.name,
-          avatarUrl: e.detail.avatarUrl ?? prev.avatarUrl,
-          initials: e.detail.name 
-            ? e.detail.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)
+          name: detail.name ?? prev.name,
+          avatarUrl: detail.avatarUrl ?? prev.avatarUrl,
+          initials: detail.name 
+            ? detail.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)
             : prev.initials
         } : null);
         return;
@@ -100,10 +101,9 @@ export default function Navbar() {
           } catch { /* silent */ }
         }
       });
-    };
+    });
 
-    window.addEventListener("cbh:profile-updated", onProfileUpdated);
-    return () => window.removeEventListener("cbh:profile-updated", onProfileUpdated);
+    return unsubscribe;
   }, [buildAuthUser]);
 
   // Auth & Polling logic

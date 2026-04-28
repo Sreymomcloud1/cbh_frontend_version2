@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
+import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 import {
   LayoutDashboard, MessageCircle, Settings,
   CheckCircle, Clock, ShoppingCart, Handshake, TrendingUp,
@@ -210,6 +211,16 @@ function BusinessDashboardInner() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    const unsubscribe = onBusinessDataChanged(load);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
+
+  useEffect(() => {
     if (tab === "messages") {
       setUnreadCount(0);
     } else {
@@ -236,6 +247,7 @@ function BusinessDashboardInner() {
       if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
       setLogoUrl(json.data.url);
       setBiz(prev => prev ? { ...prev, logo: json.data.url } : prev);
+      notifyBusinessDataChanged({ id: biz.id, action: "updated" });
       showToast("Logo updated.", true);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Logo upload failed.", false);
@@ -268,6 +280,7 @@ function BusinessDashboardInner() {
         open_for_collaboration: eCollab, open_for_investment: eInvest, notify_by_email: eNotify,
       } as any);
       setBiz(updated);
+      notifyBusinessDataChanged({ id: updated.id, action: "updated" });
       showToast("Profile saved.", true);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Save failed.", false);

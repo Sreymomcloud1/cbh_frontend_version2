@@ -11,7 +11,8 @@ import Button from "@/components/ui/Button";
 import { ecoScoreBg, ecoScoreLabel, cn } from "@/lib/utils";
 import RequestForm from "@/components/request/RequestForm";
 import { supabase } from "@/lib/supabase";
-import { toggleSaveBusiness } from "@/lib/api";
+import { getSavedBusinesses, toggleSaveBusiness } from "@/lib/api";
+import { notifyBusinessDataChanged } from "@/lib/data-events";
 import { Bookmark } from "lucide-react";
 
 interface Review {
@@ -63,6 +64,14 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
       if (!session) { setIsLoggedIn(false); return; }
       setIsLoggedIn(true);
       setCurrentUserId(session.user.id);
+      getSavedBusinesses()
+        .then(rows => {
+          const isSaved = rows.some(row =>
+            (row as { business?: { id?: string } | null }).business?.id === supplier.id
+          );
+          setSaved(isSaved);
+        })
+        .catch(() => {});
 
       fetch(`${BASE}/requests?status=completed`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
@@ -185,9 +194,13 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
     }
 
     setSavingBiz(true);
-    const result = await toggleSaveBusiness(supplier.id);
-    setSaved(result.saved);
-    setSavingBiz(false);
+    try {
+      const result = await toggleSaveBusiness(supplier.id);
+      setSaved(result.saved);
+      notifyBusinessDataChanged({ id: supplier.id, action: "updated" });
+    } finally {
+      setSavingBiz(false);
+    }
   }}
   disabled={savingBiz}
   className={cn(
