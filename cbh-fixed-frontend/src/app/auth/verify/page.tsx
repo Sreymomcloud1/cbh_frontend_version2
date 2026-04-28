@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle, XCircle, Leaf, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { resolveDashboardPath } from "@/lib/auth-routing";
 import Button from "@/components/ui/Button";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -12,10 +13,10 @@ function VerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
-  const [role, setRole] = useState("buyer");
   const [resendEmail, setResendEmail] = useState("");
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [destination, setDestination] = useState("/dashboard");
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -24,75 +25,52 @@ function VerifyContent() {
   }, [resendCooldown]);
 
   useEffect(() => {
+    let redirected = false;
+    let errorTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const processSession = async (session: { user: { id: string; user_metadata?: { intended_role?: string } } } | null) => {
+      if (!session || redirected) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, pending_business")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      const nextDestination = resolveDashboardPath(
+        profile as { role?: string; pending_business?: boolean } | null,
+        (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+      );
+
+      setDestination(nextDestination);
+      setStatus("success");
+      redirected = true;
+      setTimeout(() => router.replace(nextDestination), 1200);
+    };
+
     const { data: { subscription } } =
       supabase.auth.onAuthStateChange(async (event, session) => {
-if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && session) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role, pending_business")
-            .eq("id", session.user.id)
-            .single();
-
-          const dbRole =
-            (profile as { role: string; pending_business: boolean } | null)
-              ?.role ?? "buyer";
-
-          const isPending =
-            (profile as { role: string; pending_business: boolean } | null)
-              ?.pending_business ?? false;
-
-          const destination =
-            dbRole === "admin"
-              ? "/admin"
-              : (dbRole === "business" || isPending)
-                ? "/business-dashboard"
-                : "/dashboard";
-
-          setRole(dbRole === "business" || isPending ? "business" : dbRole);
-          setStatus("success");
-
-          setTimeout(() => router.push(destination), 2000);
+        if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && session) {
+          await processSession(session as { user: { id: string; user_metadata?: { intended_role?: string } } });
         }
       });
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role, pending_business")
-          .eq("id", session.user.id)
-          .single();
-
-        const dbRole =
-          (profile as { role: string; pending_business: boolean } | null)
-            ?.role ?? "buyer";
-
-        const isPending =
-          (profile as { role: string; pending_business: boolean } | null)
-            ?.pending_business ?? false;
-
-        const destination =
-          dbRole === "admin"
-            ? "/admin"
-            : (dbRole === "business" || isPending)
-              ? "/business-dashboard"
-              : "/dashboard";
-
-        setRole(dbRole === "business" || isPending ? "business" : dbRole);
-        setStatus("success");
-
-        setTimeout(() => router.push(destination), 2000);
+        await processSession(session as { user: { id: string; user_metadata?: { intended_role?: string } } });
       } else {
         const emailFromUrl = searchParams.get("email") ?? "";
         if (emailFromUrl) setResendEmail(emailFromUrl);
 
-        setTimeout(() => {
+        errorTimer = setTimeout(() => {
           setStatus(prev => prev === "loading" ? "error" : prev);
         }, 5000);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (errorTimer) clearTimeout(errorTimer);
+    };
   }, [router, searchParams]);
 
   const handleResend = async () => {
@@ -146,7 +124,7 @@ if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPD
             <p className="text-sm text-ink-muted mb-6">
               Your account is active. Redirecting to your dashboard...
             </p>
-            <Link href={role === "business" ? "/business-dashboard" : "/dashboard"}>
+            <Link href={destination}>
               <Button variant="primary" size="lg" className="w-full">
                 Go to Dashboard
               </Button>

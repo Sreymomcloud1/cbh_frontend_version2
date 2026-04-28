@@ -1,13 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle, Leaf } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { createBusiness } from "@/lib/api";
+import { createBusiness, getMyBusiness } from "@/lib/api";
 import { notifyBusinessDataChanged } from "@/lib/data-events";
-import type { BusinessCategory, BusinessTier, CollaborationType, CreateBusinessPayload } from "@/types";
+import type { BusinessCategory, BusinessTier, CollaborationType, CreateBusinessPayload, Supplier } from "@/types";
+import { supabase } from "@/lib/supabase";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -64,6 +65,29 @@ export default function BusinessRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [existingBusiness, setExistingBusiness] = useState<Supplier | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkAccess = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          router.replace("/auth/login?redirect=/business/register");
+          return;
+        }
+        const business = await getMyBusiness();
+        if (mounted && business) setExistingBusiness(business);
+      } catch {
+        if (mounted) setApiError("Failed to check existing business registration.");
+      } finally {
+        if (mounted) setCheckingAccess(false);
+      }
+    };
+    checkAccess();
+    return () => { mounted = false; };
+  }, [router]);
 
   const set = (k: keyof FormState, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
   const addService = () => set("services", [...form.services, ""]);
@@ -140,6 +164,31 @@ export default function BusinessRegisterPage() {
     { n: 3, label: "Settings" },
     { n: 4, label: "Review" },
   ];
+
+  if (checkingAccess) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 text-center text-sm text-ink-muted">
+        Checking your business registration...
+      </div>
+    );
+  }
+
+  if (existingBusiness) {
+    return (
+      <div className="max-w-xl mx-auto px-4 sm:px-6 py-16 text-center">
+        <div className="w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="w-8 h-8 text-brand-600" />
+        </div>
+        <h2 className="font-display text-2xl text-ink mb-2">Business Already Registered</h2>
+        <p className="text-sm text-ink-muted mb-6">
+          You already have a registered business: <strong>{existingBusiness.name}</strong>.
+        </p>
+        <Button variant="primary" onClick={() => router.push("/business-dashboard")}>
+          Go to Business Dashboard
+        </Button>
+      </div>
+    );
+  }
 
   if (submitted) {
     return (

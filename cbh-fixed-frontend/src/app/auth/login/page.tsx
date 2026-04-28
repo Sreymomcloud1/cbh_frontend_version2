@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, Leaf } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { resolveDashboardPath, resolveSafeRedirect } from "@/lib/auth-routing";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -18,10 +19,7 @@ export default function LoginPage() {
   const [hint, setHint] = useState("");
 
   const redirectParam = searchParams.get("redirect");
-  const safeRedirect =
-    redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
-      ? redirectParam
-      : null;
+  const safeRedirect = resolveSafeRedirect(redirectParam);
 
   const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -96,19 +94,17 @@ export default function LoginPage() {
     return;
   }
 
-  const dbRole = profile?.role ?? "buyer";
-  const isPending = profile?.pending_business ?? false;
+  const destination = resolveDashboardPath(
+    profile as { role?: string; pending_business?: boolean } | null,
+    (user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+  );
 
   router.refresh();
 
   if (safeRedirect) {
     router.push(safeRedirect);
-  } else if (dbRole === "admin") {
-    router.push("/admin");
-  } else if (dbRole === "business" || isPending) {
-    router.push("/business-dashboard");
   } else {
-    router.push("/dashboard");
+    router.push(destination);
   }
 };
 

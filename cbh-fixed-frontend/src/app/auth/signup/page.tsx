@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, Leaf, CheckCircle, Building2, Phone, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { resolveDashboardPath } from "@/lib/auth-routing";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -41,10 +42,18 @@ export default function SignupPage() {
 
   // ADDED: Auto-redirect if user is already logged in or becomes logged in (e.g. via email link)
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        router.push("/dashboard");
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, pending_business")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      const destination = resolveDashboardPath(
+        profile as { role?: string; pending_business?: boolean } | null,
+        (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+      );
+      router.push(destination);
     });
     return () => subscription.unsubscribe();
   }, [router]);

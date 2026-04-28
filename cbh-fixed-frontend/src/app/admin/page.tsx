@@ -460,6 +460,9 @@ export default function AdminPage() {
         id,
         action: action === "verify" ? "verified" : action === "revoke" ? "revoked" : "updated",
       });
+      setSelectedBiz(null);
+      setTab("businesses");
+      router.replace("/admin");
       showToast(
         action === "verify" ? "Business verified and published ✓" :
         action === "reject" ? "Business rejected." : "Verification revoked.",
