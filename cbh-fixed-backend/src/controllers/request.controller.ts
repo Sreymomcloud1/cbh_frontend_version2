@@ -8,7 +8,10 @@ export class RequestController {
     try {
       const service = new RequestService(req.supabase);
       const result = await service.listMyRequests(req.user.id, req.query as never);
-      sendSuccess(res, result.requests, 200, { pagination: result.pagination });
+      sendSuccess(res, {
+        requests: result.requests,
+        pagination: result.pagination,
+      });
     } catch (err) { next(err); }
   }
 
@@ -25,7 +28,10 @@ export class RequestController {
       if (!biz) throw new NotFoundError("Business");
 
       const result = await service.listBusinessRequests(biz.id as string, req.query as never);
-      sendSuccess(res, result.requests, 200, { pagination: result.pagination });
+      sendSuccess(res, {
+        requests: result.requests,
+        pagination: result.pagination,
+      });
     } catch (err) { next(err); }
   }
 

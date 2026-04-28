@@ -323,9 +323,10 @@ export async function listMyRequests(params: ListRequestsParams = {}) {
   const query = buildListRequestsQuery(params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/requests${query}`);            // ← buyer endpoint
+  const rows = Array.isArray(data) ? data : (data?.requests ?? []);
   return {
-    requests: (data.requests ?? []).map(requestToQuote) as QuoteRequest[],
-    pagination: data.pagination,
+    requests: rows.map(requestToQuote) as QuoteRequest[],
+    pagination: Array.isArray(data) ? undefined : data?.pagination,
   };
 }
 
@@ -336,9 +337,10 @@ export async function listBusinessRequests(
   const query = buildListRequestsQuery(params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/requests/business${query}`);   // ← correct endpoint
+  const rows = Array.isArray(data) ? data : (data?.requests ?? []);
   return {
-    requests: (data.requests ?? []).map(requestToQuote) as QuoteRequest[],
-    pagination: data.pagination,
+    requests: rows.map(requestToQuote) as QuoteRequest[],
+    pagination: Array.isArray(data) ? undefined : data?.pagination,
   };
 }
 

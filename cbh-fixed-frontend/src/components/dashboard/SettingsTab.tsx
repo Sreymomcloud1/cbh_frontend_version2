@@ -41,6 +41,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
   const [confirmPw, setConfirmPw] = useState("");
   const [showCurr,  setShowCurr]  = useState(false);
   const [showNew,   setShowNew]   = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [pwSaving,  setPwSaving]  = useState(false);
   const [pwMsg,     setPwMsg]     = useState("");
   const [pwError,   setPwError]   = useState("");
@@ -122,6 +123,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
     setPwMsg(""); setPwError("");
     if (!currentPw) { setPwError("Enter your current password."); return; }
     if (!newPw)     { setPwError("Enter a new password."); return; }
+    if (newPw === currentPw) { setPwError("New password must be different from current password."); return; }
 
     // Strong password check
     const errs: string[] = [];
@@ -134,9 +136,13 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
 
     setPwSaving(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const email = session?.user?.email;
+      if (!email) { setPwError("Session expired. Please sign in again."); return; }
+
       // Step 1: verify current password
       const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: user.email, password: currentPw,
+        email, password: currentPw,
       });
       if (signInErr) { setPwError("Current password is incorrect."); return; }
 
@@ -256,16 +262,16 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
         )}
 
         {[
-          { label: "Current Password", val: currentPw, set: setCurrentPw, show: showCurr, toggle: () => setShowCurr(p => !p), ph: "Enter current password" },
-          { label: "New Password",     val: newPw,     set: setNewPw,     show: showNew,  toggle: () => setShowNew(p => !p),  ph: "Min. 8 chars, uppercase, number, symbol" },
-          { label: "Confirm New Password", val: confirmPw, set: setConfirmPw, show: showNew, toggle: () => setShowNew(p => !p), ph: "Repeat new password" },
+          { label: "Current Password", val: currentPw, set: setCurrentPw, show: showCurr, toggle: () => setShowCurr(p => !p), ph: "Enter current password", autoComplete: "current-password" },
+          { label: "New Password",     val: newPw,     set: setNewPw,     show: showNew,  toggle: () => setShowNew(p => !p),  ph: "Min. 8 chars, uppercase, number, symbol", autoComplete: "new-password" },
+          { label: "Confirm New Password", val: confirmPw, set: setConfirmPw, show: showConfirm, toggle: () => setShowConfirm(p => !p), ph: "Repeat new password", autoComplete: "new-password" },
         ].map(field => (
           <FieldRow key={field.label} label={field.label}>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
               <input type={field.show ? "text" : "password"} value={field.val}
-                onChange={e => field.set(e.target.value)} placeholder={field.ph}
-                autoComplete="new-password"
+                onChange={e => { setPwMsg(""); setPwError(""); field.set(e.target.value); }} placeholder={field.ph}
+                autoComplete={field.autoComplete}
                 className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <button type="button" onClick={field.toggle}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink">

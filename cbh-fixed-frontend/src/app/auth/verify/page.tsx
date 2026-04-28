@@ -30,16 +30,23 @@ function VerifyContent() {
 
     const processSession = async (session: { user: { id: string; user_metadata?: { intended_role?: string } } } | null) => {
       if (!session || redirected) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, pending_business")
-        .eq("id", session.user.id)
-        .maybeSingle();
-
-      const nextDestination = resolveDashboardPath(
-        profile as { role?: string; pending_business?: boolean } | null,
-        (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
-      );
+      let nextDestination = "/dashboard";
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, pending_business")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        nextDestination = resolveDashboardPath(
+          profile as { role?: string; pending_business?: boolean } | null,
+          (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+        );
+      } catch {
+        nextDestination = resolveDashboardPath(
+          null,
+          (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+        );
+      }
 
       setDestination(nextDestination);
       setStatus("success");
@@ -58,6 +65,14 @@ function VerifyContent() {
       if (session) {
         await processSession(session as { user: { id: string; user_metadata?: { intended_role?: string } } });
       } else {
+        const code = searchParams.get("code");
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error && data.session) {
+            await processSession(data.session as unknown as { user: { id: string; user_metadata?: { intended_role?: string } } });
+            return;
+          }
+        }
         const emailFromUrl = searchParams.get("email") ?? "";
         if (emailFromUrl) setResendEmail(emailFromUrl);
 

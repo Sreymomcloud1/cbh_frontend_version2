@@ -56,15 +56,18 @@ export default function BusinessSettingsTab({ biz, onLogout }: Props) {
 
   const handleChangePassword = async () => {
     setPwMsg(""); setPwError("");
+    if (!currentPw) { setPwError("Please enter your current password."); return; }
     if (!newPw) { setPwError("Please enter a new password."); return; }
+    if (newPw === currentPw) { setPwError("New password must be different from current password."); return; }
     if (newPw.length < 8) { setPwError("Password must be at least 8 characters."); return; }
     if (newPw !== confirmPw) { setPwError("Passwords do not match."); return; }
     setPwSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setPwError("Not authenticated."); return; }
+      const email = session?.user?.email;
+      if (!email) { setPwError("Session expired. Please sign in again."); return; }
       const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: session.user.email!,
+        email,
         password: currentPw,
       });
       if (signInErr) { setPwError("Current password is incorrect."); return; }
@@ -135,11 +138,11 @@ export default function BusinessSettingsTab({ biz, onLogout }: Props) {
         {pwError && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{pwError}</div>
         )}
-        <Input label="Current Password" type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)}
+        <Input label="Current Password" type="password" value={currentPw} onChange={(e) => { setPwMsg(""); setPwError(""); setCurrentPw(e.target.value); }}
           leftIcon={<Lock className="w-4 h-4" />} placeholder="Current password" autoComplete="current-password" />
-        <Input label="New Password" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)}
+        <Input label="New Password" type="password" value={newPw} onChange={(e) => { setPwMsg(""); setPwError(""); setNewPw(e.target.value); }}
           leftIcon={<Lock className="w-4 h-4" />} placeholder="Min. 8 characters" autoComplete="new-password" />
-        <Input label="Confirm New Password" type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+        <Input label="Confirm New Password" type="password" value={confirmPw} onChange={(e) => { setPwMsg(""); setPwError(""); setConfirmPw(e.target.value); }}
           leftIcon={<Lock className="w-4 h-4" />} placeholder="Repeat new password" autoComplete="new-password" />
         <Button variant="secondary" size="md" loading={pwSaving} onClick={handleChangePassword}>
           Change Password

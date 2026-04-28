@@ -1,12 +1,15 @@
+"use client";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Leaf, Mail, Phone, MapPin } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const footerLinks = {
   Platform: [
     { label: "Explore Suppliers", href: "/explore" },
     { label: "Request a Quote", href: "/request" },
     { label: "How It Works", href: "/#how-it-works" },
-    { label: "Register Business", href: "/business/register" },
+    { label: "Register Business", href: "/business/register", key: "registerBusiness" },
   ],
   Company: [
     { label: "About Us", href: "/#about" },
@@ -22,6 +25,40 @@ const footerLinks = {
 };
 
 export default function Footer() {
+  const [dashboardLink, setDashboardLink] = useState<{ label: string; href: string } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadRole = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user || !mounted) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      const role = (profile as { role?: string } | null)?.role ?? "buyer";
+      if (!mounted) return;
+      if (role === "business") setDashboardLink({ label: "Business Dashboard", href: "/business-dashboard" });
+      else if (role === "admin") setDashboardLink({ label: "Admin Dashboard", href: "/admin" });
+    };
+    loadRole();
+    return () => { mounted = false; };
+  }, []);
+
+  const platformLinks = useMemo(
+    () => footerLinks.Platform.map((link) => {
+      if ((link as { key?: string }).key !== "registerBusiness" || !dashboardLink) return link;
+      return dashboardLink;
+    }),
+    [dashboardLink]
+  );
+
+  const sections = {
+    ...footerLinks,
+    Platform: platformLinks,
+  };
+
   return (
     <footer className="bg-ink text-white mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-14">
@@ -38,7 +75,7 @@ export default function Footer() {
               <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-brand-400 shrink-0" />+855 12 000 000</div>
             </div>
           </div>
-          {Object.entries(footerLinks).map(([section, links]) => (
+          {Object.entries(sections).map(([section, links]) => (
             <div key={section}>
               <h3 className="text-sm font-semibold mb-4 text-white/80">{section}</h3>
               <ul className="space-y-2">

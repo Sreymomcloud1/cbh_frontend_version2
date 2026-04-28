@@ -385,13 +385,33 @@ export default function AdminPage() {
     description: "",
     category: "",
     tier: "SME",
+    sub_categories: "",
     location_city: "",
     location_detail: "",
+    map_url: "",
+    logo_url: "",
+    gallery_urls: "",
+    eco_description: "",
+    discount_percent: "",
+    bulk_support: false,
+    bulk_capacity: "",
+    tags: "",
+    services: "",
     contact_email: "",
     contact_phone: "",
+    tax_id: "",
     facebook_url: "",
     telegram_url: "",
     website_url: "",
+    open_for_collaboration: false,
+    collaboration_types: "",
+    collaboration_description: "",
+    open_for_investment: false,
+    investment_amount: "",
+    investment_description: "",
+    founded_year: "",
+    notify_by_email: true,
+    notify_by_phone: false,
   });
 
   const [addBizSaving, setAddBizSaving] = useState(false);
@@ -400,6 +420,12 @@ export default function AdminPage() {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
   };
+
+  const toArray = (value: string) =>
+    value
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean);
 
 
   // Guard: admin only
@@ -476,27 +502,67 @@ export default function AdminPage() {
   };
 
   const handleAddBusiness = async () => {
-  if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email) {
-    showToast("Name, category and email are required.", false); return;
+  if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email || !addBizForm.contact_phone || !addBizForm.location_city) {
+    showToast("Name, category, city, email and phone are required.", false); return;
+  }
+  if (!addBizForm.facebook_url.trim() && !addBizForm.telegram_url.trim()) {
+    showToast("Add at least one verification contact: Facebook URL or Telegram URL.", false); return;
   }
   setAddBizSaving(true);
+  const payload = {
+    name: addBizForm.name.trim(),
+    tagline: addBizForm.tagline.trim() || undefined,
+    description: addBizForm.description.trim() || undefined,
+    category: addBizForm.category,
+    tier: addBizForm.tier,
+    sub_categories: toArray(addBizForm.sub_categories),
+    location_city: addBizForm.location_city.trim(),
+    location_detail: addBizForm.location_detail.trim() || undefined,
+    map_url: addBizForm.map_url.trim() || undefined,
+    logo_url: addBizForm.logo_url.trim() || undefined,
+    gallery_urls: toArray(addBizForm.gallery_urls),
+    eco_description: addBizForm.eco_description.trim() || undefined,
+    discount_percent: addBizForm.discount_percent ? Number(addBizForm.discount_percent) : undefined,
+    bulk_support: addBizForm.bulk_support,
+    bulk_capacity: addBizForm.bulk_capacity.trim() || undefined,
+    tags: toArray(addBizForm.tags),
+    services: toArray(addBizForm.services),
+    contact_email: addBizForm.contact_email.trim(),
+    contact_phone: addBizForm.contact_phone.trim(),
+    tax_id: addBizForm.tax_id.trim() || undefined,
+    facebook_url: addBizForm.facebook_url.trim() || undefined,
+    telegram_url: addBizForm.telegram_url.trim() || undefined,
+    website_url: addBizForm.website_url.trim() || undefined,
+    open_for_collaboration: addBizForm.open_for_collaboration,
+    collaboration_types: toArray(addBizForm.collaboration_types),
+    collaboration_description: addBizForm.collaboration_description.trim() || undefined,
+    open_for_investment: addBizForm.open_for_investment,
+    investment_amount: addBizForm.investment_amount.trim() || undefined,
+    investment_description: addBizForm.investment_description.trim() || undefined,
+    founded_year: addBizForm.founded_year ? Number(addBizForm.founded_year) : undefined,
+    notify_by_email: addBizForm.notify_by_email,
+    notify_by_phone: addBizForm.notify_by_phone,
+  };
   const res = await adminFetch("/admin/businesses/create", {
     method: "POST",
-    body: JSON.stringify({
-      ...addBizForm,
-      is_verified: true,
-      is_active:   true,
-      verification_status: "verified",
-    }),
+    body: JSON.stringify(payload),
   });
   setAddBizSaving(false);
   if (res.success) {
     notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
+    setTab("businesses");
+    router.replace("/admin");
     showToast("Business added and published ✓", true);
     setShowAddBiz(false);
-    setAddBizForm({ name:"", tagline:"", description:"", category:"", tier:"SME",
-      location_city:"", location_detail:"", contact_email:"",
-      contact_phone:"", facebook_url:"", telegram_url:"", website_url:"" });
+    setAddBizForm({
+      name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
+      location_city: "", location_detail: "", map_url: "", logo_url: "", gallery_urls: "",
+      eco_description: "", discount_percent: "", bulk_support: false, bulk_capacity: "", tags: "", services: "",
+      contact_email: "", contact_phone: "", tax_id: "", facebook_url: "", telegram_url: "", website_url: "",
+      open_for_collaboration: false, collaboration_types: "", collaboration_description: "",
+      open_for_investment: false, investment_amount: "", investment_description: "", founded_year: "",
+      notify_by_email: true, notify_by_phone: false,
+    });
     loadAll();
   } else {
     showToast(res.error?.message ?? "Failed to add business.", false);
@@ -882,16 +948,28 @@ export default function AdminPage() {
           { label: "Business Name *",    key: "name",          ph: "e.g. GreenLeaf Catering"      },
           { label: "Tagline",            key: "tagline",        ph: "Short one-liner"              },
           { label: "Contact Email *",    key: "contact_email",  ph: "business@email.com"           },
-          { label: "Phone",              key: "contact_phone",  ph: "+855 12 000 000"              },
+          { label: "Phone *",            key: "contact_phone",  ph: "+855 12 000 000"              },
           { label: "Facebook Page URL",  key: "facebook_url",   ph: "https://facebook.com/page"    },
           { label: "Telegram",           key: "telegram_url",   ph: "https://t.me/username"        },
           { label: "Website",            key: "website_url",    ph: "https://yourbusiness.com"     },
-          { label: "City",               key: "location_city",  ph: "Phnom Penh"                   },
+          { label: "City *",             key: "location_city",  ph: "Phnom Penh"                   },
           { label: "Location Detail",    key: "location_detail",ph: "BKK1, Phnom Penh"             },
+          { label: "Google Map URL",     key: "map_url",        ph: "https://maps.google.com/..."  },
+          { label: "Logo URL",           key: "logo_url",       ph: "https://..."                   },
+          { label: "Gallery URLs",       key: "gallery_urls",   ph: "https://a.jpg, https://b.jpg" },
+          { label: "Subcategories",      key: "sub_categories", ph: "Organic, Catering, Vegan"      },
+          { label: "Services",           key: "services",       ph: "Event catering, Delivery"      },
+          { label: "Tags",               key: "tags",           ph: "eco, local, zero-waste"        },
+          { label: "Tax ID",             key: "tax_id",         ph: "Optional tax / company id"     },
+          { label: "Bulk Capacity",      key: "bulk_capacity",  ph: "e.g. Up to 2,000 meals/day"    },
+          { label: "Discount %",         key: "discount_percent", ph: "0 - 100"                    },
+          { label: "Founded Year",       key: "founded_year",   ph: "2022"                          },
+          { label: "Collaboration Types", key: "collaboration_types", ph: "supplier, partner"       },
+          { label: "Investment Amount",  key: "investment_amount", ph: "e.g. 25,000 USD"            },
         ].map(f => (
           <div key={f.key}>
             <label className="block text-xs font-semibold text-stone-400 mb-1">{f.label}</label>
-            <input value={(addBizForm as Record<string,string>)[f.key]}
+            <input value={String((addBizForm as Record<string, string | boolean>)[f.key] ?? "")}
               onChange={e => setAddBizForm(p => ({ ...p, [f.key]: e.target.value }))}
               placeholder={f.ph}
               className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 placeholder:text-stone-600" />
@@ -922,6 +1000,46 @@ export default function AdminPage() {
             onChange={e => setAddBizForm(p => ({ ...p, description: e.target.value }))} rows={3}
             placeholder="Describe the business…"
             className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-stone-400 mb-1">Eco Description</label>
+          <textarea value={addBizForm.eco_description}
+            onChange={e => setAddBizForm(p => ({ ...p, eco_description: e.target.value }))} rows={2}
+            placeholder="What makes this business eco-friendly?"
+            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-stone-400 mb-1">Collaboration Description</label>
+          <textarea value={addBizForm.collaboration_description}
+            onChange={e => setAddBizForm(p => ({ ...p, collaboration_description: e.target.value }))} rows={2}
+            placeholder="How this business wants to collaborate"
+            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-stone-400 mb-1">Investment Description</label>
+          <textarea value={addBizForm.investment_description}
+            onChange={e => setAddBizForm(p => ({ ...p, investment_description: e.target.value }))} rows={2}
+            placeholder="Funding use-case or growth plan"
+            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
+        </div>
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-700 bg-stone-800/60 p-3">
+          {[
+            { key: "bulk_support", label: "Bulk support" },
+            { key: "open_for_collaboration", label: "Open for collaboration" },
+            { key: "open_for_investment", label: "Open for investment" },
+            { key: "notify_by_email", label: "Notify by email" },
+            { key: "notify_by_phone", label: "Notify by phone" },
+          ].map(item => (
+            <label key={item.key} className="flex items-center gap-2 text-xs text-stone-200">
+              <input
+                type="checkbox"
+                checked={(addBizForm as Record<string, boolean | string>)[item.key] as boolean}
+                onChange={e => setAddBizForm(p => ({ ...p, [item.key]: e.target.checked }))}
+                className="rounded border-stone-600 bg-stone-900 text-brand-500"
+              />
+              {item.label}
+            </label>
+          ))}
         </div>
       </div>
       <div className="flex gap-3 mt-5">

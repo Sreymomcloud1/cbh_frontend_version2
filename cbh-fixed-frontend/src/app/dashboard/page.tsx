@@ -153,7 +153,6 @@ useEffect(() => {
   const [loading,      setLoading]      = useState(true);
   const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null);
   const [deleting,     setDeleting]     = useState(false);
-  const [pwSuccess,    setPwSuccess]    = useState(false);
 
   // Review modal state
   const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string } | null>(null);
@@ -331,14 +330,15 @@ useEffect(() => {
     if (newPw !== confPw){ showToast("Passwords do not match.", false); return; }
     setPwSaving(true);
     try {
-      const { error: siErr } = await supabase.auth.signInWithPassword({ email: user!.email, password: curPw });
+      const { data: { session } } = await supabase.auth.getSession();
+      const email = session?.user?.email;
+      if (!email) throw new Error("Session expired. Please sign in again.");
+      const { error: siErr } = await supabase.auth.signInWithPassword({ email, password: curPw });
       if (siErr) throw new Error("Current password is incorrect.");
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
-      setPwSuccess(true);
-      showToast("Password updated. Logging out…", true);
+      showToast("Password updated successfully.", true);
       setCurPw(""); setNewPw(""); setConfPw("");
-      setTimeout(async () => { await supabase.auth.signOut(); window.location.href = "/auth/login"; }, 1500);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to change password.", false);
     } finally {
@@ -674,7 +674,7 @@ useEffect(() => {
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                       <input type={showPw ? "text" : "password"} value={f.val}
-                        onChange={e => f.set(e.target.value)} autoComplete="new-password"
+                        onChange={e => f.set(e.target.value)} autoComplete={f.label === "Current Password" ? "current-password" : "new-password"}
                         className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                       <button type="button" onClick={() => setShowPw(p => !p)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink">
@@ -683,10 +683,10 @@ useEffect(() => {
                     </div>
                   </div>
                 ))}
-                <button onClick={handleChangePw} disabled={pwSaving || pwSuccess || !curPw || !newPw || !confPw}
+                <button onClick={handleChangePw} disabled={pwSaving || !curPw || !newPw || !confPw}
                   className="flex items-center gap-2 bg-surface-100 hover:bg-surface-200 disabled:opacity-50 text-ink font-semibold px-5 py-2.5 rounded-xl text-sm border border-surface-200 transition-colors">
                   {pwSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {pwSaving ? "Changing…" : pwSuccess ? "Changed ✓" : "Change Password"}
+                  {pwSaving ? "Changing…" : "Change Password"}
                 </button>
               </div>
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { listMyConversations } from "@/lib/api"; // Step 2: Added import
+import { getUnreadCount } from "@/lib/api";
 import { onProfileUpdated } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import Button from "@/components/ui/Button";
@@ -66,14 +66,10 @@ export default function Navbar() {
   }, []);
 
   // Step 3 logic wrapped in a reusable function
-  const fetchUnreadCount = useCallback(async (userId: string) => {
+  const fetchUnreadCount = useCallback(async (_userId: string) => {
     try {
-      const convs = await listMyConversations();
-      const count = convs.filter(c => {
-        const msgs = (c as any).messages ?? [];
-        return msgs.some((m: any) => !m.is_read && m.sender_id !== userId);
-      }).length;
-      setUnreadCount(count);
+      const count = await getUnreadCount();
+      setUnreadCount(count ?? 0);
     } catch (err) {
       console.error("Failed to fetch unread count", err);
     }

@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   title: "CBH — Connect Businesses Hub",
   description: "Cambodia's trusted B2B marketplace. Connect with verified local suppliers, compare eco scores, and send requests in minutes.",
   keywords: ["supplier", "local business", "sourcing", "procurement", "eco-friendly", "Cambodia"],
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

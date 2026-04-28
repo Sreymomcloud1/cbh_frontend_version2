@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, Leaf } from "lucide-react";
@@ -8,7 +8,7 @@ import { resolveDashboardPath, resolveSafeRedirect } from "@/lib/auth-routing";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -196,5 +196,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12 bg-surface-50">
+          <div className="w-full max-w-sm text-center text-sm text-ink-muted">Loading sign in...</div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

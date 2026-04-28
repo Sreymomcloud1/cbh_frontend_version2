@@ -110,6 +110,11 @@ export default function BusinessRegisterPage() {
       if (!form.tier)                { setApiError("Please select a tier.");         setLoading(false); return; }
       if (!form.locationCity)        { setApiError("Please select a city.");         setLoading(false); return; }
       if (!form.contactEmail.trim()) { setApiError("Contact email is required.");    setLoading(false); return; }
+      if (!form.facebookUrl.trim() && !form.telegramUrl.trim()) {
+        setApiError("Please provide at least one trust contact: Facebook URL or Telegram URL.");
+        setLoading(false);
+        return;
+      }
 
       const payload: CreateBusinessPayload = {
         name:                      form.name.trim(),

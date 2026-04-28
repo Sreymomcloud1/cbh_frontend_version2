@@ -4,18 +4,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
+import { logoutAndRefresh } from "@/lib/logout";
 import {
   LayoutDashboard, MessageCircle, Settings,
   CheckCircle, Clock, ShoppingCart, Handshake, TrendingUp,
   Loader2, AlertCircle, Camera, Mail, Phone, Globe,
-  Facebook, Send, Lock, Eye, EyeOff, X, Leaf, Star, MapPin,
+  Facebook, Send, Lock, Eye, EyeOff, X, Leaf, Star, MapPin, Trash2,
 } from "lucide-react";
 import { 
   getMyBusiness, 
   listBusinessRequests, 
   updateBusiness, 
   listMyConversations, // Added for unread counting
-  updateRequestStatus 
+  updateRequestStatus,
+  deleteAccount,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
@@ -152,6 +154,9 @@ function BusinessDashboardInner() {
   const [confPw,   setConfPw]   = useState("");
   const [showPw,   setShowPw]   = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
+  const [deletePw, setDeletePw] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
@@ -291,6 +296,8 @@ function BusinessDashboardInner() {
 
   const handleChangePw = async () => {
     if (!curPw) { showToast("Enter current password.", false); return; }
+    if (!newPw) { showToast("Enter a new password.", false); return; }
+    if (newPw === curPw) { showToast("New password must be different.", false); return; }
     if (newPw.length < 8) { showToast("Password must be at least 8 characters.", false); return; }
     if (newPw !== confPw)  { showToast("Passwords do not match.", false); return; }
     setPwSaving(true);
@@ -301,12 +308,39 @@ function BusinessDashboardInner() {
       if (si) throw new Error("Current password is incorrect.");
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
-      showToast("Password changed.", true);
+      showToast("Password changed successfully.", true);
       setCurPw(""); setNewPw(""); setConfPw("");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed.", false);
     } finally {
       setPwSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm.trim().toUpperCase() !== "DELETE") {
+      showToast('Type "DELETE" to confirm account deletion.', false);
+      return;
+    }
+    if (!deletePw.trim()) {
+      showToast("Enter your password to confirm deletion.", false);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.email) throw new Error("Not authenticated.");
+      const { error: siErr } = await supabase.auth.signInWithPassword({
+        email: session.user.email,
+        password: deletePw,
+      });
+      if (siErr) throw new Error("Incorrect password. Account not deleted.");
+
+      await deleteAccount();
+      await logoutAndRefresh("/");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Delete failed. Contact support.", false);
+      setDeleting(false);
     }
   };
 
@@ -593,7 +627,7 @@ function BusinessDashboardInner() {
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                       <input type={showPw ? "text" : "password"} value={f.val} onChange={e => f.set(e.target.value)}
-                        autoComplete="new-password"
+                        autoComplete={f.label === "Current Password" ? "current-password" : "new-password"}
                         className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                       <button type="button" onClick={() => setShowPw(p => !p)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink">
@@ -606,6 +640,44 @@ function BusinessDashboardInner() {
                   className="flex items-center gap-2 bg-surface-100 hover:bg-surface-200 disabled:opacity-50 text-ink font-semibold px-5 py-2.5 rounded-xl text-sm border border-surface-200 transition-colors">
                   {pwSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {pwSaving ? "Changing…" : "Change Password"}
+                </button>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-red-100 shadow-soft p-5 space-y-4">
+                <h3 className="font-semibold text-red-700 text-sm">Delete Account</h3>
+                <p className="text-xs text-ink-muted">
+                  Permanently delete your business account and all associated data. This action cannot be undone.
+                </p>
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1.5">Current Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
+                    <input
+                      type="password"
+                      value={deletePw}
+                      onChange={(e) => setDeletePw(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                      placeholder="Enter password to confirm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1.5">Type DELETE to confirm</label>
+                  <input
+                    type="text"
+                    value={deleteConfirm}
+                    onChange={(e) => setDeleteConfirm(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                    placeholder="DELETE"
+                  />
+                </div>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting || !deletePw || deleteConfirm.trim().toUpperCase() !== "DELETE"}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium border border-red-200 transition-colors disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {deleting ? "Deleting…" : "Delete Account"}
                 </button>
               </div>
             </div>

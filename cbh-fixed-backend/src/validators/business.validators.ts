@@ -9,7 +9,7 @@ const ecoBreakdownSchema = z.object({
   practices: z.number().min(0).max(10),
 });
 
-export const createBusinessSchema = z.object({
+const businessSchemaBase = z.object({
   name: z.string().min(2).max(150).trim(),
   tagline: z.string().max(200).trim(),
   description: z.string().min(20).max(2000).trim(),
@@ -44,7 +44,19 @@ export const createBusinessSchema = z.object({
   notify_by_phone: z.boolean().optional(),
 });
 
-export const updateBusinessSchema = createBusinessSchema.partial();
+export const createBusinessSchema = businessSchemaBase.superRefine((data, ctx) => {
+  const hasFacebook = Boolean(data.facebook_url && data.facebook_url.trim());
+  const hasTelegram = Boolean(data.telegram_url && data.telegram_url.trim());
+  if (!hasFacebook && !hasTelegram) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["facebook_url"],
+      message: "Provide at least one trust contact: Facebook URL or Telegram URL.",
+    });
+  }
+});
+
+export const updateBusinessSchema = businessSchemaBase.partial();
 
 export const updateEcoScoreSchema = z.object({
   breakdown: ecoBreakdownSchema,

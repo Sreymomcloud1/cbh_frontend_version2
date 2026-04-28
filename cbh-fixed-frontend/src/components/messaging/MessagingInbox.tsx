@@ -64,6 +64,18 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvId]);
 
+  // Keep conversation list fresh for unread/status updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadConversations().then((convs) => {
+        if (!activeConv) return;
+        const latest = convs.find(c => c.id === activeConv.id);
+        if (latest) setActiveConv(prev => prev ? { ...prev, ...latest } : latest);
+      });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loadConversations, activeConv]);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -80,9 +92,13 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
     setLoadingMsgs(true);
     try {
       const full = await getConversation(conv.id);
-      setMessages(full.messages ?? []);
-      setActiveConv(full);
-      setConversations(prev => prev.map(c => c.id === full.id ? full : c));
+      const normalizedMessages = (full.messages ?? []).map((m) =>
+        m.senderId !== userId ? { ...m, read: true } : m
+      );
+      const normalizedConv = { ...full, messages: normalizedMessages };
+      setMessages(normalizedMessages);
+      setActiveConv(normalizedConv);
+      setConversations(prev => prev.map(c => c.id === normalizedConv.id ? normalizedConv : c));
     } catch {
       setMessages(conv.messages ?? []);
     } finally {
@@ -164,9 +180,9 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
   const lastMsg = (conv: Conversation) =>
     conv.messages?.[conv.messages.length - 1];
 
-  const hasUnread = (conv: Conversation) => {
-    const msg = lastMsg(conv);
-    return msg && !msg.read && msg.senderId !== userId;
+  const unreadCountFor = (conv: Conversation) => {
+    const msgs = conv.messages ?? [];
+    return msgs.filter((msg) => !msg.read && msg.senderId !== userId).length;
   };
 
   return (
@@ -212,7 +228,8 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
           ) : filtered.map(conv => {
             const lm     = lastMsg(conv);
             const isActive = activeConv?.id === conv.id;
-            const unread   = hasUnread(conv);
+            const unreadCount = unreadCountFor(conv);
+            const unread   = unreadCount > 0;
             return (
               <button key={conv.id} onClick={() => selectConv(conv)}
                 className={cn(
@@ -247,9 +264,11 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
                       <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize", statusBadge(conv.status))}>
                         {conv.status}
                       </span>
-                      {/* Unread badge — red dot */}
+                      {/* Unread badge */}
                       {unread && (
-                        <span className="ml-auto w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                        <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
                       )}
                     </div>
                   </div>

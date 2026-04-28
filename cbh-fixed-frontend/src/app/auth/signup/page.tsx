@@ -91,7 +91,7 @@ if (!isStrongPassword(form.password)) {
         options: {
           data: {
             name: form.name,
-            role: "buyer",
+            role,
             intended_role: role,
             phone: form.phone || null,
           },

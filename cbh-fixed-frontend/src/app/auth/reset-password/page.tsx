@@ -2,6 +2,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { resolveDashboardPath } from "@/lib/auth-routing";
 import { Loader2, Lock, Eye, EyeOff, CheckCircle, Leaf } from "lucide-react";
 
 function ResetContent() {
@@ -15,11 +16,49 @@ function ResetContent() {
   const [error,   setError]   = useState("");
 
   useEffect(() => {
-    // Supabase exchanges the recovery token in the URL automatically
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") setReady(true);
+    let mounted = true;
+    const safeSetReady = (value: boolean) => { if (mounted) setReady(value); };
+    const safeSetError = (value: string) => { if (mounted) setError(value); };
+
+    const bootstrap = async () => {
+      try {
+        const query = new URLSearchParams(window.location.search);
+        const code = query.get("code");
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(code).catch(() => null);
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const hash = window.location.hash || "";
+        const likelyRecoveryLink = hash.includes("type=recovery") || hash.includes("access_token");
+        if (session || likelyRecoveryLink) {
+          safeSetReady(true);
+          return;
+        }
+      } catch {
+        // continue to error fallback
+      }
+
+      safeSetError("Reset link is invalid or expired. Please request a new reset email.");
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" || (!!session && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED"))) {
+        safeSetReady(true);
+      }
     });
-    return () => subscription.unsubscribe();
+
+    bootstrap();
+    const timeout = setTimeout(() => {
+      if (!ready) safeSetError("Reset link is invalid or expired. Please request a new reset email.");
+    }, 7000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async () => {
@@ -31,7 +70,21 @@ function ResetContent() {
     setSaving(false);
     if (err) { setError(err.message); return; }
     setDone(true);
-    setTimeout(() => router.replace("/auth/login"), 2000);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, pending_business")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      const destination = resolveDashboardPath(
+        profile as { role?: string; pending_business?: boolean } | null,
+        (session.user.user_metadata?.intended_role as "buyer" | "business" | undefined) ?? null
+      );
+      setTimeout(() => router.replace(destination), 1500);
+    } else {
+      setTimeout(() => router.replace("/auth/login"), 1500);
+    }
   };
 
   return (
@@ -49,12 +102,21 @@ function ResetContent() {
             <div className="text-center py-4">
               <CheckCircle className="w-10 h-10 text-brand-600 mx-auto mb-3" />
               <p className="font-semibold text-ink">Password updated!</p>
-              <p className="text-sm text-ink-muted mt-1">Redirecting to login…</p>
+              <p className="text-sm text-ink-muted mt-1">Redirecting…</p>
             </div>
           ) : !ready ? (
             <div className="text-center py-6">
               <Loader2 className="w-6 h-6 animate-spin text-brand-600 mx-auto mb-2" />
               <p className="text-sm text-ink-muted">Verifying reset link…</p>
+              {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+              {error && (
+                <button
+                  onClick={() => router.replace("/auth/forgot-password")}
+                  className="mt-3 text-sm text-brand-600 hover:underline"
+                >
+                  Request a new reset link
+                </button>
+              )}
             </div>
           ) : (
             <>
