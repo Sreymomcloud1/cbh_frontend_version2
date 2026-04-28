@@ -304,10 +304,9 @@ useEffect(() => {
     if (!sName.trim()) { showToast("Name cannot be empty.", false); return; }
     setSSaving(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await updateProfile({ name: sName.trim(), phone: sPhone.trim() || null, email: sEmail.trim() } as any);
+      await updateProfile({ name: sName.trim(), phone: sPhone.trim() || null });
       setDisplayName(sName.trim());
-      setUser(prev => prev ? { ...prev, name: sName.trim(), email: sEmail.trim() } : prev);
+      setUser(prev => prev ? { ...prev, name: sName.trim(), email: sEmail.trim(), phone: sPhone.trim() || undefined } : prev);
       if (sEmail.trim() !== user?.email) {
         const { error } = await supabase.auth.updateUser({ email: sEmail.trim() });
         if (error) throw error;

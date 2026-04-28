@@ -168,6 +168,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: UserRole;
   avatar?: string;                // maps to avatar_url
   isVerified: boolean;            // maps to is_verified

@@ -191,6 +191,7 @@ export async function getProfile(): Promise<User> {
     id: data.id,
     name: data.name,
     email: data.email,
+    phone: data.phone ?? data.phone_number ?? undefined,
     role: data.role,
     avatar: data.avatar_url ?? undefined,
     isVerified: data.is_verified,

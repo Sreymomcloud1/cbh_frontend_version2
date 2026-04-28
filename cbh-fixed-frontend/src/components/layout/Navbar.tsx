@@ -183,6 +183,9 @@ export default function Navbar() {
   const dashboardHref =
     authUser?.role === "admin" ? "/admin" :
     authUser?.role === "business" ? "/business-dashboard" : "/dashboard";
+  const profileHref =
+    authUser?.role === "admin" ? "/admin" :
+    authUser?.role === "business" ? "/business-dashboard?tab=settings" : "/dashboard?tab=settings";
 
   const AvatarCircle = ({ size = "sm" }: { size?: "sm" | "md" }) => {
     const dim = size === "md" ? "w-9 h-9 text-sm" : "w-7 h-7 text-xs";
@@ -276,13 +279,17 @@ export default function Navbar() {
 
               {userMenuOpen && (
                 <div className="absolute top-full right-0 mt-2 w-52 bg-white rounded-2xl border border-surface-200 shadow-lift p-2 animate-slide-down">
-                  <div className="flex items-center gap-3 px-3 py-2.5 border-b border-surface-100 mb-1">
+                  <Link
+                    href={profileHref}
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 border-b border-surface-100 mb-1 rounded-xl hover:bg-surface-50 transition-colors"
+                  >
                     <AvatarCircle size="md" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-ink truncate">{authUser.name}</p>
                       <p className="text-[10px] text-ink-faint capitalize">{authUser.role}</p>
                     </div>
-                  </div>
+                  </Link>
                   <Link href={dashboardHref} onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-50 text-sm text-ink transition-colors">
                     <LayoutDashboard className="w-4 h-4 text-ink-faint" /> Dashboard
@@ -333,7 +340,7 @@ export default function Navbar() {
             {authReady && (
               authUser ? (
                 <div className="space-y-1 pt-2 pb-1 border-t border-surface-100">
-                  <div className="flex items-center gap-3 px-3 py-2">
+                  <Link href={profileHref} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-50">
                     <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
                       {authUser.avatarUrl
                         ? <img src={authUser.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -344,7 +351,7 @@ export default function Navbar() {
                       <p className="text-sm font-medium text-ink">{authUser.name}</p>
                       <p className="text-xs text-ink-faint capitalize">{authUser.role}</p>
                     </div>
-                  </div>
+                  </Link>
                   <Link href={dashboardHref}
                     className="block px-3 py-2 text-sm text-ink-muted rounded-xl hover:bg-surface-50">
                     Dashboard
