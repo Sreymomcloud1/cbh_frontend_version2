@@ -178,7 +178,7 @@ useEffect(() => {
     try {
       const [profile, { requests: reqs }] = await Promise.all([
         getProfile(),
-        listMyRequests({ limit: 100 }),
+        listMyRequests({ limit: 50 }),
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = profile as any;
@@ -356,7 +356,7 @@ useEffect(() => {
       // Show review modal
       setReviewModal({ bizId, bizName });
       // Refresh requests
-      listMyRequests({ limit: 100 }).then(({ requests: reqs }) => setRequests(reqs)).catch(() => {});
+      listMyRequests({ limit: 50 }).then(({ requests: reqs }) => setRequests(reqs)).catch(() => {});
     } catch {
       showToast("Could not mark as complete.", false);
     }

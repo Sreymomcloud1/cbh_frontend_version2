@@ -288,10 +288,19 @@ export interface ListRequestsParams {
   limit?: number;
 }
 
-export async function listMyRequests(params: ListRequestsParams = {}) {
+const MAX_REQUESTS_LIMIT = 50;
+
+function buildListRequestsQuery(params: ListRequestsParams = {}) {
   const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
-  const query = qs.toString() ? `?${qs}` : "";
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined) return;
+    qs.set(k, k === "limit" ? String(Math.min(Number(v), MAX_REQUESTS_LIMIT)) : String(v));
+  });
+  return qs.toString() ? `?${qs}` : "";
+}
+
+export async function listMyRequests(params: ListRequestsParams = {}) {
+  const query = buildListRequestsQuery(params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/requests${query}`);            // ← buyer endpoint
   return {
@@ -304,9 +313,7 @@ export async function listBusinessRequests(
   _businessId: string,                                              // ignored — backend resolves by auth
   params: ListRequestsParams = {}
 ) {
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
-  const query = qs.toString() ? `?${qs}` : "";
+  const query = buildListRequestsQuery(params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/requests/business${query}`);   // ← correct endpoint
   return {
