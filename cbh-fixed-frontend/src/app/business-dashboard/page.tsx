@@ -464,7 +464,9 @@ function BusinessDashboardInner() {
                       <div key={req.id} className="flex items-center justify-between p-3 rounded-xl bg-surface-50 gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-ink truncate">{req.product}</p>
-                          <p className="text-xs text-ink-faint">{formatDate(req.createdAt)}</p>
+                          <p className="text-xs text-ink-faint">
+                            {req.buyerName ?? "Buyer"}{req.buyerEmail ? ` • ${req.buyerEmail}` : ""} • {formatDate(req.createdAt)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium capitalize", purposeColor(req.purpose))}>

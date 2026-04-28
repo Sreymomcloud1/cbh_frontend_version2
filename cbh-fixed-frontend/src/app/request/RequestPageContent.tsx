@@ -22,6 +22,10 @@ function transformBusiness(b: any): Supplier {
     verified: b.is_verified ?? false, tags: b.tags ?? [], services: b.services ?? [],
     contactEmail: b.contact_email ?? "", contactPhone: b.contact_phone ?? "",
     rating: b.rating ?? 0, reviewCount: b.review_count ?? 0,
+    isActive: b.is_active ?? true,
+    notifyByEmail: b.notify_by_email ?? true,
+    notifyByPhone: b.notify_by_phone ?? false,
+    phone: b.contact_phone ?? "",
     collaboration: { enabled: b.open_for_collaboration ?? false, lookingFor: b.collaboration_types ?? [] },
     investment: { enabled: b.open_for_investment ?? false },
   };

@@ -40,6 +40,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: true, lookingFor: ["supplier", "marketing"], description: "Looking for organic ingredient suppliers and marketing partners." },
     investment: { enabled: false },
     foundedYear: 2021,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 12 345 678",
   },
   {
     id: "sup-002",
@@ -76,6 +80,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: true, lookingFor: ["partner"], description: "Seeking distribution partners in Phnom Penh." },
     investment: { enabled: true, amount: "$20,000–$50,000", description: "Seeking seed investment to scale production capacity." },
     foundedYear: 2022,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 23 456 789",
   },
   {
     id: "sup-003",
@@ -111,6 +119,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: false, lookingFor: [] },
     investment: { enabled: false },
     foundedYear: 2019,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 34 567 890",
   },
   {
     id: "sup-004",
@@ -145,6 +157,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: true, lookingFor: ["marketing", "partner"], description: "Open to collaborations with event organizers." },
     investment: { enabled: true, amount: "$10,000–$30,000", description: "Looking for investment to expand fleet." },
     foundedYear: 2020,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 45 678 901",
   },
   {
     id: "sup-005",
@@ -178,6 +194,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: true, lookingFor: ["marketing", "partner"] },
     investment: { enabled: false },
     foundedYear: 2023,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 56 789 012",
   },
   {
     id: "sup-006",
@@ -214,6 +234,10 @@ export const mockSuppliers: Supplier[] = [
     collaboration: { enabled: false, lookingFor: [] },
     investment: { enabled: true, amount: "$5,000–$15,000", description: "Seeking investment to open a second processing facility." },
     foundedYear: 2022,
+    isActive: true,
+    notifyByEmail: true,
+    notifyByPhone: false,
+    phone: "+855 67 890 123",
   },
 ];
 
@@ -363,7 +387,7 @@ export const mockFounders: Founder[] = [
     role: "Co-Founder & Tech Lead | ICT Student",
     message:
       "I am very honored to welcome everyone to CBH. This platform was born from a simple observation: local suppliers in Cambodia have incredible products, but buyers struggle to find and connect with them efficiently. As an ICT student passionate about technology's role in economic empowerment, I wanted to build something that genuinely helps both sides — making discovery effortless for buyers and giving local businesses the visibility they deserve. CBH is our commitment to building a more connected, sustainable local economy.",
-    imageUrl: "",
+    imageUrl: "/images/founders/sreymom.png",
     facebookUrl: "https://facebook.com/",
     linkedinUrl: "https://linkedin.com/",
     telegramUrl: "https://t.me/cbh_sreymom",
@@ -375,7 +399,7 @@ export const mockFounders: Founder[] = [
     role: "Co-Founder & Marketing Director | Marketing Professional",
     message:
       "I worked in marketing for several years, helping businesses grow their reach and connect with customers. What I noticed again and again was the gap between small local suppliers — who had genuinely great products — and the buyers who needed them but couldn't find them. CBH bridges that gap. We're not just a directory; we're a platform built on trust, transparency, and sustainability. I'm proud to be building something that supports local businesses and empowers buyers to make informed, eco-conscious choices.",
-    imageUrl: "",
+    imageUrl: "/images/founders/sreytoch.png",
     facebookUrl: "https://facebook.com/",
     linkedinUrl: "https://linkedin.com/",
     telegramUrl: "https://t.me/cbh_sreytoch",

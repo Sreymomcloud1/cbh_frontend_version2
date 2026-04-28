@@ -138,6 +138,8 @@ export function requestToQuote(r: any): QuoteRequest {
     id: r.id,
     supplierId: r.business_id ?? undefined,
     supplierName: r.business?.name ?? undefined,
+    buyerName: r.buyer?.name ?? undefined,
+    buyerEmail: r.buyer?.email ?? undefined,
     purpose: r.purpose,
     product: r.product,
     quantity: r.quantity ?? "",

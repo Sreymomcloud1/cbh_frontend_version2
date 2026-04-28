@@ -143,6 +143,8 @@ export interface QuoteRequest {
   id: string;
   supplierId?: string;            // maps to business_id
   supplierName?: string;          // joined from businesses.name
+  buyerName?: string;             // joined from profiles.name (business view)
+  buyerEmail?: string;            // joined from profiles.email (business view)
   purpose: RequestPurpose;
   product: string;
   quantity: string;               // maps to quantity (nullable → "" in UI)

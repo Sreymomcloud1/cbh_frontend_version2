@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { notifyBusinessDataChanged } from "@/lib/data-events";
 import type { RequestPurpose, CreateRequestPayload } from "@/types";
 
 type Purpose = RequestPurpose;
@@ -110,6 +111,8 @@ export default function RequestForm({
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Failed to submit request");
 
+      window.dispatchEvent(new CustomEvent("cbh:request-submitted"));
+      notifyBusinessDataChanged({ id: payload.business_id ?? undefined, action: "created" });
       setSubmitted(true);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Failed to submit request.");

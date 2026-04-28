@@ -99,6 +99,11 @@ export class RequestService {
 
   async createRequest(buyerId: string, input: CreateRequestInput) {
     const bizId = input.business_id && input.business_id.trim() !== "" ? input.business_id : null;
+    const { data: buyerProfile } = await this.db
+      .from("profiles")
+      .select("name, email")
+      .eq("id", buyerId)
+      .maybeSingle();
 
     const { data: request, error } = await this.db
       .from("requests")
@@ -156,11 +161,13 @@ export class RequestService {
         const b = biz as any;
         if (b?.notify_by_email && b?.contact_email) {
           const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const buyer = (buyerProfile ?? {}) as any;
           await sendMessageNotification({
             businessEmail:  b.contact_email,
             businessName:   b.name,
-            senderName:     "A buyer on CBH",
-            senderEmail:    "",
+            senderName:     buyer.name ?? "A buyer on CBH",
+            senderEmail:    buyer.email ?? "",
             messageContent: `New ${input.purpose} request for: ${input.product}. Log in to your dashboard to view and reply.`,
             product:        input.product,
             purpose:        input.purpose,
