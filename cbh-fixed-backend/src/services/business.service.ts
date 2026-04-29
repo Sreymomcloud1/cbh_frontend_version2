@@ -151,6 +151,7 @@ export class BusinessService {
     return data as Business;
   }
 
+  /** Allowed for any verification status (pending / approved / rejected / revoked)—owners maintain their draft listing. */
   async updateBusiness(id: string, ownerId: string, input: UpdateBusinessInput): Promise<Business> {
     await this.assertOwner(id, ownerId);
     const { data, error } = await this.db
@@ -164,6 +165,7 @@ export class BusinessService {
     return data as Business;
   }
 
+  /** Allowed regardless of verification status so owners can improve their eco score before resubmitting. */
   async updateEcoScore(id: string, ownerId: string, input: UpdateEcoScoreInput): Promise<Business> {
     await this.assertOwner(id, ownerId);
     const { breakdown } = input;

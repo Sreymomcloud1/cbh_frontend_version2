@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAccessToken } from "@/lib/supabase";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import {
@@ -11,7 +10,7 @@ import {
   Loader2, AlertCircle, Camera, Mail, Phone, Globe,
   Facebook, Send, Lock, Eye, EyeOff, X, Leaf, Star, MapPin, Trash2,
 } from "lucide-react";
-import { 
+import {
   getMyBusiness, 
   listBusinessRequests, 
   updateBusiness, 
@@ -19,15 +18,17 @@ import {
   updateRequestStatus,
   deleteAccount,
   resubmitBusinessForReview,
+  uploadBusinessLogo,
 } from "@/lib/api";
+import { businessVerificationBadge } from "@/lib/business-verification-display";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
+import { verifyCurrentPasswordAndSetNew } from "@/lib/auth-change-password";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
 import EcoScoreQuestionnaire from "@/components/eco/EcoScoreQuestionnaire";
 import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import type { Supplier, QuoteRequest } from "@/types";
 import { Suspense } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 type Tab = "overview" | "messages" | "settings";
 
 const nav: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -35,23 +36,6 @@ const nav: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "messages",  label: "Messages", icon: MessageCircle },
   { id: "settings",  label: "Settings", icon: Settings },
 ];
-
-function verificationSidebarBadge(biz: Supplier): { label: string; className: string } {
-  const v = String(biz.verificationStatus ?? "pending");
-  if (biz.verified || v === "verified" || v === "approved") {
-    return { label: "Verified", className: "bg-brand-50 text-brand-600 border-brand-200" };
-  }
-  if (v === "pending") {
-    return { label: "Pending review", className: "bg-amber-50 text-amber-800 border-amber-200" };
-  }
-  if (v === "rejected") {
-    return { label: "Not approved", className: "bg-red-50 text-red-700 border-red-200" };
-  }
-  if (v === "revoked") {
-    return { label: "Unpublished", className: "bg-stone-100 text-stone-700 border-stone-200" };
-  }
-  return { label: "Pending review", className: "bg-amber-50 text-amber-800 border-amber-200" };
-}
 
 function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
@@ -147,6 +131,8 @@ function BusinessDashboardInner() {
   const logoUploadingRef = useRef(false);
   const [eSaving,  setESaving]  = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  /** Helps owners find edits after rejection/unpublish—same tooling as pending/approved listings */
+  const expandProfileBannerOnceRef = useRef(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
 
   const [curPw,    setCurPw]    = useState("");
@@ -257,6 +243,14 @@ function BusinessDashboardInner() {
     }
   }, [tab, fetchUnread]);
 
+  useEffect(() => {
+    if (!biz || expandProfileBannerOnceRef.current) return;
+    const status = String(biz.verificationStatus ?? "");
+    if (status !== "rejected" && status !== "revoked") return;
+    expandProfileBannerOnceRef.current = true;
+    setShowProfile(true);
+  }, [biz]);
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !biz) return;
@@ -265,19 +259,10 @@ function BusinessDashboardInner() {
     setLogoUploading(true);
     logoUploadingRef.current = true;
     try {
-      const token = await getAccessToken();
-      const form  = new FormData();
-      form.append("file", file);
-      form.append("business_id", biz.id);
-      const res   = await fetch(`${API}/upload/business-logo`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
-      setLogoUrl(json.data.url);
-      setBiz(prev => prev ? { ...prev, logo: json.data.url } : prev);
+      const url = await uploadBusinessLogo(file, biz.id);
+      const displayUrl = `${url.split("?")[0]}?t=${Date.now()}`;
+      setLogoUrl(displayUrl);
+      setBiz(prev => (prev ? { ...prev, logo: displayUrl } : prev));
       notifyBusinessDataChanged({ id: biz.id, action: "updated" });
       showToast("Logo updated.", true);
     } catch (err) {
@@ -323,19 +308,17 @@ function BusinessDashboardInner() {
   };
 
   const handleChangePw = async () => {
-    if (!curPw) { showToast("Enter current password.", false); return; }
-    if (!newPw) { showToast("Enter a new password.", false); return; }
-    if (newPw === curPw) { showToast("New password must be different.", false); return; }
-    if (newPw.length < 8) { showToast("Password must be at least 8 characters.", false); return; }
-    if (newPw !== confPw)  { showToast("Passwords do not match.", false); return; }
+    const cur = curPw.trim();
+    const neu = newPw.trim();
+    const conf = confPw.trim();
+    if (!cur) { showToast("Enter current password.", false); return; }
+    if (!neu) { showToast("Enter a new password.", false); return; }
+    if (neu === cur) { showToast("New password must be different.", false); return; }
+    if (neu.length < 8) { showToast("Password must be at least 8 characters.", false); return; }
+    if (neu !== conf) { showToast("Passwords do not match.", false); return; }
     setPwSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.email) throw new Error("No session");
-      const { error: si } = await supabase.auth.signInWithPassword({ email: session.user.email, password: curPw });
-      if (si) throw new Error("Current password is incorrect.");
-      const { error } = await supabase.auth.updateUser({ password: newPw });
-      if (error) throw error;
+      await verifyCurrentPasswordAndSetNew(cur, neu);
       showToast("Password changed successfully.", true);
       setCurPw(""); setNewPw(""); setConfPw("");
     } catch (err) {
@@ -382,7 +365,7 @@ function BusinessDashboardInner() {
 
   if (!biz) return null;
 
-  const verBadge = verificationSidebarBadge(biz);
+  const verBadge = businessVerificationBadge(biz);
   const vs = String(biz.verificationStatus ?? "pending");
   const isApproved = biz.verified || vs === "verified" || vs === "approved";
 
@@ -453,7 +436,7 @@ function BusinessDashboardInner() {
             <>
               <p className="font-semibold text-ink mb-1">Pending admin approval</p>
               <p className="text-ink-muted leading-relaxed">
-                Your listing is under review. You can use your dashboard, profile, and messages now;
+                Your listing is under review. You can use your dashboard, edit your profile and eco score, and reply to messages;
                 once an admin approves your business, it will appear in Explore Suppliers.
               </p>
             </>
@@ -462,7 +445,7 @@ function BusinessDashboardInner() {
             <>
               <p className="font-semibold text-ink mb-1">Registration not approved</p>
               <p className="text-ink-muted leading-relaxed">
-                Your business is not listed publicly. Update your profile if needed and contact support if you have questions.
+                Your listing is not shown publicly—the same edits as while pending apply: use Overview below to update your logo, description, eco score, and contact info, then submit for admin review when ready.
               </p>
               {biz.rejectionReason ? (
                 <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-red-100 px-3 py-2">
@@ -476,7 +459,7 @@ function BusinessDashboardInner() {
             <>
               <p className="font-semibold text-ink mb-1">Listing unpublished</p>
               <p className="text-ink-muted leading-relaxed">
-                Your business is no longer shown in Explore Suppliers. You still have access to your dashboard here.
+                Your listing is not shown in Explore right now—you can still edit your profile and eco score on this dashboard (same as when pending approval), then use “Submit for admin review” when you want reconsideration.
               </p>
               {biz.rejectionReason ? (
                 <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-stone-200 px-3 py-2">
@@ -707,7 +690,11 @@ function BusinessDashboardInner() {
                     waste:     biz.ecoScore.breakdown.waste     ?? 0,
                     delivery:  biz.ecoScore.breakdown.delivery  ?? 0,
                     practices: biz.ecoScore.breakdown.practices ?? 0,
-                  } as any}
+                  }}
+                  onSaved={(updated) => {
+                    setBiz(updated);
+                    notifyBusinessDataChanged({ id: updated.id, action: "updated" });
+                  }}
                 />
               </div>
             </div>
@@ -746,7 +733,7 @@ function BusinessDashboardInner() {
                     </div>
                   </div>
                 ))}
-                <button onClick={handleChangePw} disabled={pwSaving || !curPw || !newPw || !confPw}
+                <button type="button" onClick={handleChangePw} disabled={pwSaving || !curPw.trim() || !newPw.trim() || !confPw.trim()}
                   className="flex items-center gap-2 bg-surface-100 hover:bg-surface-200 disabled:opacity-50 text-ink font-semibold px-5 py-2.5 rounded-xl text-sm border border-surface-200 transition-colors">
                   {pwSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {pwSaving ? "Changing…" : "Change Password"}

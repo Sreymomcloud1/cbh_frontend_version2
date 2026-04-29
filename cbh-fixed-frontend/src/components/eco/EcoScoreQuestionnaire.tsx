@@ -1,8 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn, ecoLevel, ecoScoreBg } from "@/lib/utils";
 import Button from "@/components/ui/Button";
 import { Leaf, RefreshCw } from "lucide-react";
+import { updateEcoScore } from "@/lib/api";
+import type { Supplier } from "@/types";
 
 interface Section {
   id: string;
@@ -80,9 +82,65 @@ const sections: Section[] = [
   },
 ];
 
-export default function EcoScoreQuestionnaire({ businessId, initialBreakdown }: { businessId?: string; initialBreakdown?: Record<string, number> }) {
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+/** Find one subset of questions whose points sum exactly to target (deterministic fallback for ambiguous sums). */
+function idsForSectionTotal(
+  questions: { id: string; points: number }[],
+  target: number,
+): Set<string> {
+  const found = new Set<string>();
+  if (questions.length === 0 || target < 0) return found;
+
+  let bestMask: number | null = null;
+  const n = questions.length;
+  for (let mask = 0; mask < 1 << n; mask++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) sum += questions[i].points;
+    }
+    if (sum !== target) continue;
+    if (bestMask === null || mask < bestMask) bestMask = mask;
+  }
+  if (bestMask === null) return found;
+  for (let i = 0; i < n; i++) {
+    if (bestMask & (1 << i)) found.add(questions[i].id);
+  }
+  return found;
+}
+
+function hydrateChecked(initialBreakdown?: Record<string, number>): Set<string> {
+  const out = new Set<string>();
+  if (!initialBreakdown) return out;
+  for (const sec of sections) {
+    const t = Math.round(Number(initialBreakdown[sec.id] ?? 0));
+    idsForSectionTotal(sec.questions, t).forEach((id) => out.add(id));
+  }
+  return out;
+}
+
+export default function EcoScoreQuestionnaire({
+  businessId,
+  initialBreakdown,
+  onSaved,
+}: {
+  businessId?: string;
+  initialBreakdown?: Record<string, number>;
+  onSaved?: (supplier: Supplier) => void;
+}) {
+  const [checked, setChecked] = useState<Set<string>>(() => hydrateChecked(initialBreakdown));
   const [submitted, setSubmitted] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setChecked(hydrateChecked(initialBreakdown));
+  }, [
+    initialBreakdown?.packaging,
+    initialBreakdown?.sourcing,
+    initialBreakdown?.energy,
+    initialBreakdown?.waste,
+    initialBreakdown?.delivery,
+    initialBreakdown?.practices,
+  ]);
 
   const toggle = (id: string) => {
     setChecked((prev) => {
@@ -93,32 +151,42 @@ export default function EcoScoreQuestionnaire({ businessId, initialBreakdown }: 
     });
   };
 
-  const [saving, setSaving] = useState(false);
+  const breakdown = useMemo(
+    () =>
+      sections.reduce<Record<string, number>>((acc, sec) => {
+        acc[sec.id] = sec.questions.filter((q) => checked.has(q.id)).reduce((sum, q) => sum + q.points, 0);
+        return acc;
+      }, {}),
+    [checked],
+  );
 
   const handleSave = async () => {
+    setSaveError(null);
+    if (!businessId) {
+      setSaveError("Missing business.");
+      return;
+    }
     setSaving(true);
+    setSubmitted(false);
     try {
-      const { updateEcoScore } = await import("@/lib/api");
-      if (businessId) {
-        await updateEcoScore(businessId, {
-          packaging: breakdown.packaging ?? 0,
-          sourcing: breakdown.sourcing ?? 0,
-          energy: breakdown.energy ?? 0,
-          waste: breakdown.waste ?? 0,
-          delivery: breakdown.delivery ?? 0,
-          practices: breakdown.practices ?? 0,
-        });
-      }
-    } catch { /* ignore - still show success */ } finally {
-      setSaving(false);
+      const updated = await updateEcoScore(businessId, {
+        packaging: breakdown.packaging ?? 0,
+        sourcing: breakdown.sourcing ?? 0,
+        energy: breakdown.energy ?? 0,
+        waste: breakdown.waste ?? 0,
+        delivery: breakdown.delivery ?? 0,
+        practices: breakdown.practices ?? 0,
+      });
+      onSaved?.(updated);
       setSubmitted(true);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not save eco score.";
+      setSaveError(msg);
+      setSubmitted(false);
+    } finally {
+      setSaving(false);
     }
   };
-
-  const breakdown = sections.reduce<Record<string, number>>((acc, sec) => {
-    acc[sec.id] = sec.questions.filter((q) => checked.has(q.id)).reduce((sum, q) => sum + q.points, 0);
-    return acc;
-  }, {});
 
   const total = Object.values(breakdown).reduce((a, b) => a + b, 0);
   const level = ecoLevel(total);
@@ -169,11 +237,16 @@ export default function EcoScoreQuestionnaire({ businessId, initialBreakdown }: 
           <Button variant="primary" size="lg" onClick={handleSave} loading={saving}>
             Save Eco Score
           </Button>
-          <Button variant="outline" size="lg" onClick={() => { setChecked(new Set()); setSubmitted(false); }} className="gap-2">
+          <Button variant="outline" size="lg" onClick={() => { setChecked(new Set()); setSubmitted(false); setSaveError(null); }} className="gap-2">
             <RefreshCw className="w-4 h-4" /> Reset
           </Button>
         </div>
-        {submitted && (
+        {saveError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
+            {saveError}
+          </div>
+        )}
+        {submitted && !saveError && (
           <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 text-sm text-brand-700 font-medium">
             ✅ Eco score saved! Your score of {total}/100 is now visible on your profile.
           </div>

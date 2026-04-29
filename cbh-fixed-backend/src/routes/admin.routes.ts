@@ -114,11 +114,8 @@ const verifySchema = z
     }
   });
 
-/** Keeps admin /users in sync with business verification (profile.role + auth user_metadata). */
-async function syncBusinessOwnerRoleForVerification(
-  ownerId: string,
-  mode: "verified" | "unlisted",
-): Promise<void> {
+/** Runs only when admin approves — promotes owner to `business` and clears `pending_business`. Reject/revoke do not touch profile role. */
+async function syncBusinessOwnerProfileOnVerify(ownerId: string): Promise<void> {
   const { data: prof } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -127,39 +124,22 @@ async function syncBusinessOwnerRoleForVerification(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if ((prof as any)?.role === "admin") return;
 
-  if (mode === "verified") {
-    const { error } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        role: "business",
-        pending_business: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", ownerId);
-    if (error) throw error;
-  } else {
-    const { error } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        role: "buyer",
-        pending_business: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", ownerId);
-    if (error) throw error;
-  }
+  const { error } = await supabaseAdmin
+    .from("profiles")
+    .update({
+      role: "business",
+      pending_business: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", ownerId);
+  if (error) throw error;
 
   const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(ownerId);
   if (authErr || !authData?.user) return;
 
   const meta: Record<string, unknown> = { ...(authData.user.user_metadata ?? {}) };
-  if (mode === "verified") {
-    meta.role = "business";
-    meta.intended_role = "business";
-  } else {
-    meta.role = "buyer";
-    meta.intended_role = "buyer";
-  }
+  meta.role = "business";
+  meta.intended_role = "business";
   await supabaseAdmin.auth.admin.updateUserById(ownerId, { user_metadata: meta }).catch(() => undefined);
 }
 
@@ -294,12 +274,8 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ownerId = (data as any).owner_id as string | undefined;
-    if (ownerId) {
-      if (action === "verify") {
-        await syncBusinessOwnerRoleForVerification(ownerId, "verified");
-      } else {
-        await syncBusinessOwnerRoleForVerification(ownerId, "unlisted");
-      }
+    if (ownerId && action === "verify") {
+      await syncBusinessOwnerProfileOnVerify(ownerId);
     }
 
     // Write audit log

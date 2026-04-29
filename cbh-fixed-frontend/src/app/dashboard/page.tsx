@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 import {
   getProfile, listMyRequests, updateProfile, deleteAccount,
-  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness, uploadAvatar, resubmitBusinessForReview,
+  listMyConversations, updateConversationStatus, createReview, getSavedBusinesses, getMyBusiness, uploadAvatar, resubmitBusinessForReview,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor } from "@/lib/utils";
 import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged, notifyBusinessDataChanged } from "@/lib/data-events";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
+import { verifyCurrentPasswordAndSetNew } from "@/lib/auth-change-password";
 import type { User, QuoteRequest, Supplier } from "@/types";
 import Link from "next/link";
 
@@ -42,7 +43,8 @@ function getBusinessStatusMeta(biz: Supplier) {
       label: "Rejected",
       className: "border-red-200 bg-red-50/90",
       iconClassName: "text-red-600",
-      description: "Your listing is not publicly visible. Update your profile if needed and submit again for admin review.",
+      description:
+        "Your listing is not publicly visible. Use Business Dashboard → Overview to edit your listing (same controls as pending or approved), then submit for admin review.",
     };
   }
   if (status === "revoked") {
@@ -50,7 +52,8 @@ function getBusinessStatusMeta(biz: Supplier) {
       label: "Revoked",
       className: "border-stone-300 bg-stone-50",
       iconClassName: "text-stone-600",
-      description: "Your listing is currently unpublished from Explore Suppliers, but you can still access your account.",
+      description:
+        "Your listing is unpublished from Explore—you can still update your listing in Business Dashboard Overview, messages, and settings like any other verification state.",
     };
   }
   return {
@@ -248,13 +251,15 @@ useEffect(() => {
       setSPhone(p.phone ?? p.phone_number ?? "");
       const mine = await getMyBusiness().catch(() => null);
       setMyBusiness(mine);
-      const ids = savedRows
-        .map((row) => (row as { business?: { id?: string } | null }).business?.id)
-        .filter((id): id is string => Boolean(id));
-      const savedBusinesses = await Promise.all(ids.map(id =>
-        getBusinessById(id).then(b => ({ id, name: b.name })).catch(() => null)
-      ));
-      const activeSaved = savedBusinesses.filter((b): b is { id: string; name: string } => Boolean(b));
+      // Names already returned on saved rows — avoids N parallel public GET /businesses/:id hits (429 risk).
+      type SavedApiRow = { business?: { id?: string; name?: string } | null };
+      const activeSaved = (savedRows as SavedApiRow[])
+        .map((row) => {
+          const b = row.business;
+          if (!b?.id) return null;
+          return { id: b.id, name: (b.name && String(b.name).trim()) ? b.name : "Saved supplier" };
+        })
+        .filter((b): b is { id: string; name: string } => Boolean(b));
       setSavedIds(activeSaved.map(b => b.id));
       setSavedNames(Object.fromEntries(activeSaved.map(b => [b.id, b.name])));
     } catch (err) {
@@ -385,20 +390,17 @@ useEffect(() => {
 
   // ── Change password ───────────────────────────────────────────────────────
   const handleChangePw = async () => {
-    if (!curPw.trim())   { showToast("Enter your current password.", false); return; }
-    if (!newPw.trim())   { showToast("Enter a new password.", false); return; }
-    if (curPw === newPw) { showToast("New password must be different.", false); return; }
-    if (newPw.length < 8){ showToast("Password must be at least 8 characters.", false); return; }
-    if (newPw !== confPw){ showToast("Passwords do not match.", false); return; }
+    const cur = curPw.trim();
+    const neu = newPw.trim();
+    const cf = confPw.trim();
+    if (!cur) { showToast("Enter your current password.", false); return; }
+    if (!neu) { showToast("Enter a new password.", false); return; }
+    if (cur === neu) { showToast("New password must be different.", false); return; }
+    if (neu.length < 8) { showToast("Password must be at least 8 characters.", false); return; }
+    if (neu !== cf) { showToast("Passwords do not match.", false); return; }
     setPwSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const email = session?.user?.email;
-      if (!email) throw new Error("Session expired. Please sign in again.");
-      const { error: siErr } = await supabase.auth.signInWithPassword({ email, password: curPw });
-      if (siErr) throw new Error("Current password is incorrect.");
-      const { error } = await supabase.auth.updateUser({ password: newPw });
-      if (error) throw error;
+      await verifyCurrentPasswordAndSetNew(cur, neu);
       showToast("Password updated successfully.", true);
       setCurPw(""); setNewPw(""); setConfPw("");
     } catch (err) {
@@ -780,7 +782,7 @@ useEffect(() => {
                     </div>
                   </div>
                 ))}
-                <button onClick={handleChangePw} disabled={pwSaving || !curPw || !newPw || !confPw}
+                <button type="button" onClick={handleChangePw} disabled={pwSaving || !curPw.trim() || !newPw.trim() || !confPw.trim()}
                   className="flex items-center gap-2 bg-surface-100 hover:bg-surface-200 disabled:opacity-50 text-ink font-semibold px-5 py-2.5 rounded-xl text-sm border border-surface-200 transition-colors">
                   {pwSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {pwSaving ? "Changing…" : "Change Password"}

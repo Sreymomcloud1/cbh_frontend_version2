@@ -5,9 +5,12 @@ import { usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getMyBusiness, getUnreadCount } from "@/lib/api";
-import { onProfileUpdated } from "@/lib/data-events";
+import { onProfileUpdated, onBusinessDataChanged } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import Button from "@/components/ui/Button";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
+import { businessVerificationBadge } from "@/lib/business-verification-display";
+import type { Supplier } from "@/types";
 import { cn } from "@/lib/utils";
 
 const exploreLinks = [
@@ -28,7 +31,7 @@ interface AuthUser {
   initials: string;
   role: string;
   avatarUrl: string | null;
-  businessStatusLabel?: "Pending" | "Approved" | "Revoked" | "Rejected";
+  businessStatusLabel?: string;
   businessStatusClassName?: string;
 }
 
@@ -53,35 +56,35 @@ export default function Navbar() {
       .select("name, role, avatar_url, pending_business")
       .eq("id", userId)
       .single();
-    
+
     const p = (data ?? {}) as { name?: string; role?: string; avatar_url?: string | null; pending_business?: boolean };
-    const name = p?.name ?? email.split("@")[0] ?? "User";
-    const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+    let name = p?.name ?? email.split("@")[0] ?? "User";
+    const profileAvatarUrl = p?.avatar_url ? `${p.avatar_url.split("?")[0]}?t=${Date.now()}` : null;
+
     const shouldLoadBusinessStatus = p?.role === "business" || p?.pending_business === true;
-    const myBusiness = shouldLoadBusinessStatus ? await getMyBusiness().catch(() => null) : null;
-    const verification = String(myBusiness?.verificationStatus ?? "pending");
-    const isApproved = Boolean(myBusiness && (myBusiness.verified || verification === "verified" || verification === "approved"));
-    const businessStatusLabel =
-      !myBusiness ? undefined :
-      isApproved ? "Approved" :
-      verification === "revoked" ? "Revoked" :
-      verification === "rejected" ? "Rejected" :
-      "Pending";
-    const businessStatusClassName =
-      !myBusiness ? undefined :
-      isApproved ? "bg-brand-50 text-brand-700 border-brand-200" :
-      verification === "revoked" ? "bg-stone-100 text-stone-700 border-stone-200" :
-      verification === "rejected" ? "bg-red-50 text-red-700 border-red-200" :
-      "bg-amber-50 text-amber-800 border-amber-200";
+    const myBusiness: Supplier | null = shouldLoadBusinessStatus
+      ? await getMyBusiness().catch(() => null)
+      : null;
+
+    /** Match business-dashboard sidebar: listing name + logo, not buyer profile */
+    let navAvatarUrl: string | null = profileAvatarUrl;
+    if (myBusiness && (p?.role === "business" || p?.pending_business)) {
+      name = myBusiness.name || name;
+      navAvatarUrl = myBusiness.logo ? `${myBusiness.logo.split("?")[0]}?t=${Date.now()}` : null;
+    }
+
+    const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+
+    const verFromBiz = myBusiness ? businessVerificationBadge(myBusiness) : null;
 
     return {
       id: userId,
       name,
       initials,
       role: p?.role ?? "buyer",
-      avatarUrl: p?.avatar_url ? `${p.avatar_url}?t=${Date.now()}` : null,
-      businessStatusLabel,
-      businessStatusClassName,
+      avatarUrl: navAvatarUrl,
+      businessStatusLabel: verFromBiz?.label,
+      businessStatusClassName: verFromBiz?.className,
     };
   }, []);
 
@@ -99,18 +102,19 @@ export default function Navbar() {
     }
   }, []);
 
-  // Listen for profile updates
+  // Listen for profile updates — re-fetch so business users keep business name/logo from listing
   useEffect(() => {
     const unsubscribe = onProfileUpdated((detail) => {
       if (detail?.name || detail?.avatarUrl) {
-        setAuthUser(prev => prev ? {
-          ...prev,
-          name: detail.name ?? prev.name,
-          avatarUrl: detail.avatarUrl ?? prev.avatarUrl,
-          initials: detail.name 
-            ? detail.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)
-            : prev.initials
-        } : null);
+        void (async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user) return;
+          try {
+            setAuthUser(await buildAuthUser(session.user.id, session.user.email ?? ""));
+          } catch {
+            /* silent */
+          }
+        })();
         return;
       }
 
@@ -119,12 +123,29 @@ export default function Navbar() {
           try {
             const u = await buildAuthUser(session.user.id, session.user.email ?? "");
             setAuthUser(u);
-          } catch { /* silent */ }
+          } catch {
+            /* silent */
+          }
         }
       });
     });
 
     return unsubscribe;
+  }, [buildAuthUser]);
+
+  /** Logo / verification changes → refresh nav (badge + stale getMyBusiness) */
+  useEffect(() => {
+    const unsub = onBusinessDataChanged(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      try {
+        const u = await buildAuthUser(session.user.id, session.user.email ?? "");
+        setAuthUser(u);
+      } catch {
+        /* ignore */
+      }
+    });
+    return unsub;
   }, [buildAuthUser]);
 
   // Auth & Polling logic
@@ -209,11 +230,20 @@ export default function Navbar() {
     authUser?.role === "admin" ? "/admin" :
     authUser?.role === "business" ? "/business-dashboard?tab=settings" : "/dashboard?tab=settings";
 
-  const AvatarCircle = ({ size = "sm" }: { size?: "sm" | "md" }) => {
-    const dim = size === "md" ? "w-9 h-9 text-sm" : "w-7 h-7 text-xs";
+  const NavbarIdentityAvatar = ({ size = "sm" }: { size?: "sm" | "md" }) => {
+    if (!authUser) return null;
+    const dim = size === "md" ? "w-9 h-9" : "w-7 h-7";
+    const txt = size === "md" ? "text-sm" : "text-xs";
     return (
-      <div className={cn("rounded-full bg-brand-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0", dim)}>
-        <img src={authUser?.avatarUrl || "/default-avatar.svg"} alt="Profile" className="w-full h-full object-cover" />
+      <div className={cn("rounded-full overflow-hidden shrink-0 border border-surface-200/90 bg-white", dim)}>
+        <BusinessMedia
+          fit="avatar"
+          src={authUser.avatarUrl}
+          alt=""
+          name={authUser.name}
+          className="h-full w-full rounded-full bg-surface-100"
+          avatarTextClassName={txt}
+        />
       </div>
     );
   };
@@ -290,9 +320,9 @@ export default function Navbar() {
               </div>
 
               <button onClick={() => setUserMenuOpen(p => !p)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-surface-50 transition-colors">
-                <AvatarCircle />
-                <span className="text-sm font-medium text-ink">{authUser.name.split(" ")[0]}</span>
+                className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-surface-50 transition-colors max-w-[min(100vw,20rem)]">
+                <NavbarIdentityAvatar />
+                <span className="text-sm font-medium text-ink truncate min-w-0">{authUser.name}</span>
                 {authUser.businessStatusLabel && authUser.businessStatusClassName && (
                   <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", authUser.businessStatusClassName)}>
                     {authUser.businessStatusLabel}
@@ -308,7 +338,7 @@ export default function Navbar() {
                     onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-3 px-3 py-2.5 border-b border-surface-100 mb-1 rounded-xl hover:bg-surface-50 transition-colors"
                   >
-                    <AvatarCircle size="md" />
+                    <NavbarIdentityAvatar size="md" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-ink truncate">{authUser.name}</p>
                       <p className="text-[10px] text-ink-faint capitalize">{authUser.role}</p>
@@ -370,9 +400,7 @@ export default function Navbar() {
               authUser ? (
                 <div className="space-y-1 pt-2 pb-1 border-t border-surface-100">
                   <Link href={profileHref} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-50">
-                    <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
-                      <img src={authUser.avatarUrl || "/default-avatar.svg"} alt="Profile" className="w-full h-full object-cover" />
-                    </div>
+                    <NavbarIdentityAvatar size="md" />
                     <div>
                       <p className="text-sm font-medium text-ink">{authUser.name}</p>
                       <p className="text-xs text-ink-faint capitalize">{authUser.role}</p>

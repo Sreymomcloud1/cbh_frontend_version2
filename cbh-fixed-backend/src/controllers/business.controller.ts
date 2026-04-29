@@ -53,11 +53,7 @@ export class BusinessController {
     try {
       const service = new BusinessService(req.supabase);
       const business = await service.updateEcoScore(req.params.id as string, req.user.id, req.body);
-      sendSuccess(res, {
-        eco_score_overall: business.eco_score_overall,
-        eco_level: business.eco_level,
-        eco_breakdown: business.eco_breakdown,
-      });
+      sendSuccess(res, business);
     } catch (err) { next(err); }
   }
 

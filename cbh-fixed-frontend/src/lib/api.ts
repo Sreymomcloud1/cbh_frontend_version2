@@ -37,7 +37,8 @@ export function getApiBaseUrl(): string {
 const BASE_URL = getApiBaseUrl();
 const REQUEST_TIMEOUT_MS = 15000;
 const RATE_LIMIT_RETRY_MS = 1200;
-const MAX_RATE_LIMIT_RETRIES = 1;
+/** Extra fetches while waiting out global API rate limits (burst from dashboard + Navbar). */
+const MAX_RATE_LIMIT_ATTEMPTS = 6;
 const MY_BUSINESS_CACHE_MS = 15000;
 let myBusinessCache: { value: Supplier | null; expiresAt: number } | null = null;
 let myBusinessInFlight: Promise<Supplier | null> | null = null;
@@ -95,8 +96,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   let lastError: Error | null = null;
   let retriedWithRefresh = false;
+  let rateLimitRound = 0;
 
-  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     const res = await fetchWithTimeout(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
     const json = await res.json().catch(() => ({}));
 
@@ -122,20 +125,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         await supabase.auth.signOut();
         window.location.href = "/auth/login";
       }
+      throw new Error(json?.error?.message ?? "Not authenticated.");
     }
 
     lastError = new Error(json?.error?.message ?? `Request failed: ${res.status}`);
 
-    if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-      const retryInMs = parseRetryAfterMs(res.headers.get("retry-after"));
-      await sleep(retryInMs);
+    if (res.status === 429 && rateLimitRound < MAX_RATE_LIMIT_ATTEMPTS) {
+      rateLimitRound += 1;
+      const hinted = parseRetryAfterMs(res.headers.get("retry-after"));
+      const backoff = Math.min(
+        hinted * Math.pow(1.65, Math.max(0, rateLimitRound - 1)) + Math.random() * 400,
+        25_000,
+      );
+      await sleep(backoff);
       continue;
     }
 
     throw lastError;
   }
-
-  throw lastError ?? new Error("Request failed.");
 }
 
 // ─── Public request helper (no auth required) ─────────────────────────────────
@@ -556,11 +563,13 @@ export async function uploadAvatar(file: File): Promise<string> {
 
 export async function uploadBusinessLogo(file: File, businessId: string): Promise<string> {
   const result = await uploadFile("business-logo", file, { business_id: businessId });
+  clearBusinessApiCache();
   return result.url;
 }
 
 export async function uploadBusinessGalleryImage(file: File, businessId: string): Promise<{ url: string; gallery_urls: string[] }> {
   const result = await uploadFile("business-gallery", file, { business_id: businessId });
+  clearBusinessApiCache();
   return result as { url: string; gallery_urls: string[] };
 }
 

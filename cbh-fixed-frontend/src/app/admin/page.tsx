@@ -15,9 +15,41 @@ import { cn } from "@/lib/utils";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import { BusinessMedia } from "@/components/ui/BusinessMedia";
+import { getApiBaseUrl } from "@/lib/api";
 //import { Users, Clock } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const API = getApiBaseUrl();
+const ADMIN_REQUEST_TIMEOUT_MS = 30000;
+
+async function fetchAdminWithTimeout(input: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ADMIN_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function parseAdminResponse(res: Response): Promise<{ success: boolean; data?: unknown; error?: { message?: string } }> {
+  const text = await res.text();
+  if (!text?.trim()) {
+    return {
+      success: false,
+      error: { message: res.ok ? "Empty response from server" : `Request failed (${res.status})` },
+    };
+  }
+  try {
+    return JSON.parse(text) as { success: boolean; data?: unknown; error?: { message?: string } };
+  } catch {
+    return { success: false, error: { message: "Invalid response from server." } };
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,7 +120,10 @@ type AdminTab = "overview" | "businesses" | "users";
 
 // ── API helper ───────────────────────────────────────────────────────────────
 
-async function adminFetch(path: string, options: RequestInit = {}) {
+async function adminFetch<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<{ success: boolean; data?: T; error?: { message?: string } }> {
   let token = await getAccessToken();
   if (!token) {
     if (typeof window !== "undefined") window.location.href = "/auth/login";
@@ -96,7 +131,7 @@ async function adminFetch(path: string, options: RequestInit = {}) {
   }
 
   const doFetch = async (accessToken: string) =>
-    fetch(`${API}${path}`, {
+    fetchAdminWithTimeout(`${API}${path}`, {
       ...options,
       cache: "no-store",
       headers: {
@@ -123,7 +158,7 @@ async function adminFetch(path: string, options: RequestInit = {}) {
     }
   }
 
-  return res.json();
+  return (await parseAdminResponse(res)) as { success: boolean; data?: T; error?: { message?: string } };
 }
 
 const MAX_ADMIN_GALLERY = 8;
@@ -137,7 +172,7 @@ async function adminFetchMultipart(path: string, formData: FormData): Promise<{ 
   }
 
   const doFetch = async (accessToken: string) =>
-    fetch(`${API}${path}`, {
+    fetchAdminWithTimeout(`${API}${path}`, {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -161,7 +196,7 @@ async function adminFetchMultipart(path: string, formData: FormData): Promise<{ 
     }
   }
 
-  return res.json();
+  return (await parseAdminResponse(res)) as { success: boolean; data?: { url: string }; error?: { message?: string } };
 }
 
 // ── Small UI pieces ───────────────────────────────────────────────────────────
@@ -596,11 +631,11 @@ export default function AdminPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     const [statsRes, bizRes, usersRes] = await Promise.all([
-      adminFetch("/admin/stats"),
-      adminFetch(`/admin/businesses?status=${bizFilter}${search ? `&search=${encodeURIComponent(search)}` : ""}`),
-      adminFetch(`/admin/users${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+      adminFetch<Stats>("/admin/stats"),
+      adminFetch<BusinessFull[]>(`/admin/businesses?status=${bizFilter}${search ? `&search=${encodeURIComponent(search)}` : ""}`),
+      adminFetch<UserProfile[]>(`/admin/users${search ? `?search=${encodeURIComponent(search)}` : ""}`),
     ]);
-    if (statsRes.success)  setStats(statsRes.data);
+    if (statsRes.success)  setStats(statsRes.data ?? null);
     if (bizRes.success)    setBusinesses(Array.isArray(bizRes.data) ? bizRes.data : []);
     if (usersRes.success)  setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
     setLoading(false);
@@ -620,8 +655,8 @@ export default function AdminPage() {
 
   // Open business detail modal (fetches full data)
   const openDetail = async (id: string) => {
-    const res = await adminFetch(`/admin/businesses/${id}`);
-    if (res.success) setSelectedBiz(res.data);
+    const res = await adminFetch<BusinessFull>(`/admin/businesses/${id}`);
+    if (res.success) setSelectedBiz(res.data ?? null);
   };
 
   // Verification action
@@ -737,28 +772,20 @@ export default function AdminPage() {
         notify_by_phone: addBizForm.notify_by_phone,
       };
 
-      const res = await adminFetch("/admin/businesses/create", {
+      const res = await adminFetch<{
+        id?: string;
+        ownerCredentialsEmailed?: boolean;
+        ownerCredentialsEmailError?: string;
+      }>("/admin/businesses/create", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
       if (res.success) {
-        notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
-        setTab("businesses");
-        router.replace("/admin");
-        const emailed = Boolean(res.data?.ownerCredentialsEmailed);
-        const emailErr = res.data?.ownerCredentialsEmailError as string | undefined;
         const contact = payload.contact_email;
-        if (emailErr) {
-          showToast(
-            `Business added (pending verification), but login email failed: ${emailErr}. The owner can use “Forgot password” for ${contact}.`,
-            false,
-          );
-        } else if (emailed) {
-          showToast(`Business added — pending verification. Login details were sent to ${contact}.`, true);
-        } else {
-          showToast("Business added — pending verification.", true);
-        }
+        const emailed = Boolean(res.data?.ownerCredentialsEmailed);
+        const emailErr = res.data?.ownerCredentialsEmailError;
+
         setShowAddBiz(false);
         resetAddBizUploadFields();
         setAddBizForm({
@@ -770,7 +797,25 @@ export default function AdminPage() {
           open_for_investment: false, investment_amount: "", investment_description: "", founded_year: "",
           notify_by_email: true, notify_by_phone: false,
         });
-        loadAll();
+
+        if (emailErr) {
+          showToast(
+            `Business added (pending verification), but login email failed: ${emailErr}. The owner can use “Forgot password” for ${contact}.`,
+            false,
+          );
+        } else if (emailed) {
+          showToast(`Business added — pending verification. Login details were sent to ${contact}.`, true);
+        } else {
+          showToast("Business added — pending verification.", true);
+        }
+
+        setTab("businesses");
+        try {
+          router.replace("/admin");
+        } catch {
+          /* ignore navigation edge cases */
+        }
+        notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
       } else {
         showToast(res.error?.message ?? "Failed to add business.", false);
       }
@@ -1338,7 +1383,7 @@ export default function AdminPage() {
           className="flex-1 py-2 rounded-xl border border-stone-700 text-stone-300 text-sm hover:bg-stone-800">
           Cancel
         </button>
-        <button onClick={handleAddBusiness} disabled={addBizSaving}
+        <button type="button" onClick={handleAddBusiness} disabled={addBizSaving}
           className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50">
           {addBizSaving ? "Adding…" : "Add business"}
         </button>
