@@ -198,6 +198,9 @@ drop policy if exists "rewards: owner read" on rewards;
 create policy "rewards: owner read"
   on rewards for select using (auth.uid() = user_id);
 
+-- ── FEEDBACK SUBMISSIONS (backend service role inserts; no direct client access) ──
+alter table feedback_submissions enable row level security;
+
 -- ── STORAGE RLS (run after creating buckets in Supabase Dashboard) ─────────
 -- Avatars bucket: users can upload/update their own avatar
 -- insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict do nothing;

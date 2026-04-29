@@ -286,6 +286,24 @@ create trigger on_message_insert
   for each row execute function update_conversation_timestamp();
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- PLATFORM FEEDBACK (Contact form → admin dashboard, not email-only)
+-- ─────────────────────────────────────────────────────────────────────────
+create table if not exists feedback_submissions (
+  id         uuid primary key default uuid_generate_v4(),
+  sender_id  uuid        not null references profiles(id) on delete cascade,
+  name       text        not null,
+  email      text        not null,
+  topic      text        not null,
+  subject    text        not null default '',
+  message    text        not null check (length(message) between 1 and 2000),
+  rating     int         check (rating is null or (rating between 1 and 5)),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists feedback_submissions_created_idx on feedback_submissions(created_at desc);
+create index if not exists feedback_submissions_sender_idx  on feedback_submissions(sender_id);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- SAVED BUSINESSES
 -- ─────────────────────────────────────────────────────────────────────────
 create table if not exists saved_businesses (

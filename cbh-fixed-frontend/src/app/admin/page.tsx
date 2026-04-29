@@ -6,7 +6,7 @@ import {
   BarChart3, CheckCircle, XCircle, Clock, RefreshCw,
   ChevronDown, ChevronUp, AlertCircle, Loader2, Eye,
   RotateCcw, X, Mail, Phone, Globe, Facebook, Send,
-  FileText, Star, Leaf, MapPin, Camera,
+  FileText, Star, Leaf, MapPin, Camera, MessageSquare,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
@@ -116,7 +116,20 @@ interface Stats {
   pending_verification: number;
 }
 
-type AdminTab = "overview" | "businesses" | "users";
+type AdminTab = "overview" | "businesses" | "users" | "feedback";
+
+interface FeedbackSubmissionRow {
+  id: string;
+  sender_id: string;
+  name: string;
+  email: string;
+  topic: string;
+  subject: string;
+  message: string;
+  rating: number | null;
+  created_at: string;
+  sender?: { id: string; name: string; email: string } | null;
+}
 
 // ── API helper ───────────────────────────────────────────────────────────────
 
@@ -492,6 +505,8 @@ export default function AdminPage() {
   const [expandedId,    setExpandedId]    = useState<string | null>(null);
   const [selectedBiz,   setSelectedBiz]   = useState<BusinessFull | null>(null);
   const [toast,         setToast]         = useState<{ msg: string; ok: boolean } | null>(null);
+  const [feedbackList,  setFeedbackList]  = useState<FeedbackSubmissionRow[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   // 🔽 ADD HERE (below existing useState)
   const [showAddBiz, setShowAddBiz] = useState(false);
@@ -641,7 +656,27 @@ export default function AdminPage() {
     setLoading(false);
   }, [bizFilter, search]);
 
+  const loadFeedback = useCallback(async () => {
+    setFeedbackLoading(true);
+    const res = await adminFetch<FeedbackSubmissionRow[]>("/admin/feedback");
+    if (res.success && Array.isArray(res.data)) {
+      setFeedbackList(res.data);
+    } else {
+      setFeedbackList([]);
+    }
+    setFeedbackLoading(false);
+  }, []);
+
+  const refreshCurrent = useCallback(async () => {
+    if (tab === "feedback") await loadFeedback();
+    else await loadAll();
+  }, [tab, loadFeedback, loadAll]);
+
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    if (tab === "feedback") void loadFeedback();
+  }, [tab, loadFeedback]);
 
   useEffect(() => {
     const unsubscribe = onBusinessDataChanged(loadAll);
@@ -855,6 +890,7 @@ export default function AdminPage() {
     { id: "overview",   label: "Overview",   icon: BarChart3   },
     { id: "businesses", label: "Businesses", icon: Building2,  badge: stats?.pending_verification },
     { id: "users",      label: "Users",      icon: Users },
+    { id: "feedback",   label: "Feedback",   icon: MessageSquare },
   ];
 
  
@@ -924,6 +960,7 @@ export default function AdminPage() {
     {tab === "overview"   && "Platform Overview"}
     {tab === "businesses" && "Business Verification"}
     {tab === "users"      && "User Management"}
+    {tab === "feedback"   && "Contact & Feedback Inbox"}
   </h1>
 
   {/* RIGHT SIDE ACTIONS */}
@@ -941,11 +978,11 @@ export default function AdminPage() {
 
     {/* Existing Refresh button */}
     <button
-      onClick={loadAll}
-      disabled={loading}
+      onClick={() => void refreshCurrent()}
+      disabled={tab === "feedback" ? feedbackLoading : loading}
       className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-white transition-colors disabled:opacity-50"
     >
-      <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+      <RefreshCw size={13} className={(tab === "feedback" ? feedbackLoading : loading) ? "animate-spin" : ""} />
       Refresh
     </button>
 
@@ -1182,6 +1219,76 @@ export default function AdminPage() {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* ── FEEDBACK (contact form inbox) ── */}
+              {tab === "feedback" && (
+                <div className="space-y-4">
+                  {feedbackLoading && feedbackList.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-24 text-stone-500 gap-3">
+                      <Loader2 size={28} className="animate-spin" />
+                      <p className="text-sm">Loading messages…</p>
+                    </div>
+                  ) : feedbackList.length === 0 ? (
+                    <div className="rounded-2xl border border-stone-800 bg-stone-900 px-8 py-16 text-center text-stone-500 text-sm">
+                      No feedback submissions yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {feedbackList.map((f) => {
+                        const s = f.sender && !Array.isArray(f.sender)
+                          ? f.sender
+                          : Array.isArray(f.sender)
+                            ? f.sender[0]
+                            : null;
+                        return (
+                          <div
+                            key={f.id}
+                            className="rounded-2xl border border-stone-700 bg-stone-900 px-5 py-4 space-y-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-brand-400 bg-brand-950/80 border border-brand-800 rounded-full px-2.5 py-0.5">
+                                  {f.topic}
+                                </span>
+                                {(f.subject ?? "").trim().length > 0 && (
+                                  <p className="text-sm font-medium text-white mt-2">{(f.subject ?? "").trim()}</p>
+                                )}
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-stone-400">
+                                  <span className="text-stone-200 font-medium">{f.name}</span>
+                                  <span className="flex items-center gap-1">
+                                    <Mail size={11} />
+                                    <a href={`mailto:${f.email}`} className="text-brand-400 hover:underline truncate max-w-[200px] sm:max-w-md">
+                                      {f.email}
+                                    </a>
+                                  </span>
+                                  <span>{new Date(f.created_at).toLocaleString()}</span>
+                                  {typeof f.rating === "number" && f.rating > 0 && (
+                                    <span className="flex items-center gap-0.5 text-amber-400">
+                                      <Star size={11} fill="currentColor" className="shrink-0" />
+                                      {f.rating}/5
+                                    </span>
+                                  )}
+                                </div>
+                                {s?.id && (
+                                  <p className="text-[11px] text-stone-500 mt-2">
+                                    Account:&nbsp;
+                                    <span className="text-stone-400">{s.name}</span>
+                                    {" "}
+                                    <span className="text-stone-600">({s.email})</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-stone-300 whitespace-pre-wrap border-t border-stone-800 pt-3 leading-relaxed">
+                              {f.message}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </>

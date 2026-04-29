@@ -153,6 +153,18 @@ export interface Review {
   created_at:  string;
 }
 
+export interface FeedbackSubmission {
+  id:         string;
+  sender_id:  string;
+  name:       string;
+  email:      string;
+  topic:      string;
+  subject:    string;
+  message:    string;
+  rating:     number | null;
+  created_at: string;
+}
+
 // ─── Database type — Supabase-style, fully inlined Insert/Update ─────────────
 //
 // WHY INLINE: The Supabase JS v2 client resolves Insert/Update generics at the
@@ -421,6 +433,22 @@ export interface Database {
         };
       };
 
+      feedback_submissions: {
+        Row: FeedbackSubmission;
+        Insert: {
+          id?:         string;
+          sender_id:   string;
+          name:        string;
+          email:       string;
+          topic:       string;
+          subject?:    string;
+          message:     string;
+          rating?:     number | null;
+          created_at?: string;
+        };
+        Update: never;
+      };
+
     };
 
     Functions: {
@@ -447,3 +475,5 @@ export type MessageUpdate       = Database["public"]["Tables"]["messages"]["Upda
 export type SavedBusinessInsert = Database["public"]["Tables"]["saved_businesses"]["Insert"];
 export type RewardInsert        = Database["public"]["Tables"]["rewards"]["Insert"];
 export type ReviewInsert        = Database["public"]["Tables"]["reviews"]["Insert"];
+export type FeedbackSubmissionInsert =
+  Database["public"]["Tables"]["feedback_submissions"]["Insert"];

@@ -38,6 +38,39 @@ router.get("/stats", async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Feedback (contact form submissions) ────────────────────────────────────
+
+// GET /api/v1/admin/feedback — inbox for platform feedback (newest first)
+router.get("/feedback", async (_req, res, next) => {
+  try {
+    const { data, error, count } = await supabaseAdmin
+      .from("feedback_submissions")
+      .select(
+        `
+        id,
+        sender_id,
+        name,
+        email,
+        topic,
+        subject,
+        message,
+        rating,
+        created_at,
+        sender:profiles!sender_id (
+          id,
+          name,
+          email
+        )
+      `,
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    sendSuccess(res, data ?? [], 200, { total: count ?? data?.length ?? 0 });
+  } catch (err) { next(err); }
+});
+
 // ── Businesses ───────────────────────────────────────────────────────────────
 
 // GET /api/v1/admin/businesses?status=pending|verified|rejected|revoked|all

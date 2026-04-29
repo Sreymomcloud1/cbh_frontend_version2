@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef, type ReactNode, type ElementType } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
@@ -27,7 +27,6 @@ import MessagingInbox from "@/components/messaging/MessagingInbox";
 import EcoScoreQuestionnaire from "@/components/eco/EcoScoreQuestionnaire";
 import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import type { Supplier, QuoteRequest } from "@/types";
-import { Suspense } from "react";
 
 type Tab = "overview" | "messages" | "settings";
 
@@ -96,6 +95,40 @@ function SupplierCard({ biz }: { biz: Supplier }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function BizProfileToggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-ink">{label}</span>
+      <button type="button" onClick={() => onChange(!checked)}
+        className={cn("w-11 h-6 rounded-full relative transition-colors", checked ? "bg-brand-600" : "bg-surface-200")}>
+        <div className={cn("w-5 h-5 rounded-full bg-white absolute top-0.5 shadow transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} />
+      </button>
+    </div>
+  );
+}
+
+function BizProfileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-ink mb-1.5">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function BizProfileTextInput({ value, onChange, placeholder, type = "text", icon: Icon }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; icon?: ElementType;
+}) {
+  return (
+    <div className="relative">
+      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />}
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className={cn("w-full py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500",
+          Icon ? "pl-10 pr-4" : "px-3")} />
     </div>
   );
 }
@@ -373,34 +406,6 @@ function BusinessDashboardInner() {
   const collabReqs = requests.filter(r => r.purpose === "collaborate").length;
   const investReqs = requests.filter(r => r.purpose === "invest").length;
 
-  const Toggle = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-ink">{label}</span>
-      <button type="button" onClick={() => onChange(!checked)}
-        className={cn("w-11 h-6 rounded-full relative transition-colors", checked ? "bg-brand-600" : "bg-surface-200")}>
-        <div className={cn("w-5 h-5 rounded-full bg-white absolute top-0.5 shadow transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} />
-      </button>
-    </div>
-  );
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div>
-      <label className="block text-xs font-semibold text-ink mb-1.5">{label}</label>
-      {children}
-    </div>
-  );
-
-  const TInput = ({ value, onChange, placeholder, type = "text", icon: Icon }: {
-    value: string; onChange: (v: string) => void; placeholder?: string; type?: string; icon?: React.ElementType;
-  }) => (
-    <div className="relative">
-      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />}
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className={cn("w-full py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500",
-          Icon ? "pl-10 pr-4" : "px-3")} />
-    </div>
-  );
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
@@ -615,7 +620,7 @@ function BusinessDashboardInner() {
               </div>
 
               <div className="bg-white rounded-2xl border border-surface-200 shadow-soft overflow-hidden">
-                <button onClick={() => setShowProfile(p => !p)}
+                <button type="button" onClick={() => setShowProfile(p => !p)}
                   className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-ink hover:bg-surface-50 transition-colors">
                   <span>Edit Business Profile</span>
                   <span className="text-ink-faint">{showProfile ? "▲" : "▼"}</span>
@@ -646,23 +651,23 @@ function BusinessDashboardInner() {
                       <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                     </div>
 
-                    <Field label="Business Name"><TInput value={eName} onChange={setEName} /></Field>
-                    <Field label="Tagline"><TInput value={eTagline} onChange={setETagline} placeholder="Short description" /></Field>
-                    <Field label="Description">
+                    <BizProfileField label="Business Name"><BizProfileTextInput value={eName} onChange={setEName} /></BizProfileField>
+                    <BizProfileField label="Tagline"><BizProfileTextInput value={eTagline} onChange={setETagline} placeholder="Short description" /></BizProfileField>
+                    <BizProfileField label="Description">
                       <textarea value={eDesc} onChange={e => setEDesc(e.target.value)} rows={4}
                         className="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
-                    </Field>
-                    <Field label="Contact Email"><TInput value={eEmail} onChange={setEEmail} type="email" icon={Mail} /></Field>
-                    <Field label="Phone"><TInput value={ePhone} onChange={setEPhone} type="tel" icon={Phone} placeholder="+855 12 000 000" /></Field>
-                    <Field label="Website"><TInput value={eWeb} onChange={setEWeb} icon={Globe} placeholder="https://yourbusiness.com" /></Field>
-                    <Field label="Facebook"><TInput value={eFB} onChange={setEFB} icon={Facebook} placeholder="https://facebook.com/yourpage" /></Field>
-                    <Field label="Telegram"><TInput value={eTG} onChange={setETG} icon={Send} placeholder="https://t.me/yourusername" /></Field>
+                    </BizProfileField>
+                    <BizProfileField label="Contact Email"><BizProfileTextInput value={eEmail} onChange={setEEmail} type="email" icon={Mail} /></BizProfileField>
+                    <BizProfileField label="Phone"><BizProfileTextInput value={ePhone} onChange={setEPhone} type="tel" icon={Phone} placeholder="+855 12 000 000" /></BizProfileField>
+                    <BizProfileField label="Website"><BizProfileTextInput value={eWeb} onChange={setEWeb} icon={Globe} placeholder="https://yourbusiness.com" /></BizProfileField>
+                    <BizProfileField label="Facebook"><BizProfileTextInput value={eFB} onChange={setEFB} icon={Facebook} placeholder="https://facebook.com/yourpage" /></BizProfileField>
+                    <BizProfileField label="Telegram"><BizProfileTextInput value={eTG} onChange={setETG} icon={Send} placeholder="https://t.me/yourusername" /></BizProfileField>
                     <div className="space-y-2 pt-1">
-                      <Toggle checked={eCollab} onChange={setECollab} label="Open for Collaboration" />
-                      <Toggle checked={eInvest} onChange={setEInvest} label="Open for Investment" />
-                      <Toggle checked={eNotify} onChange={setENotify} label="Email notifications for new messages" />
+                      <BizProfileToggle checked={eCollab} onChange={setECollab} label="Open for Collaboration" />
+                      <BizProfileToggle checked={eInvest} onChange={setEInvest} label="Open for Investment" />
+                      <BizProfileToggle checked={eNotify} onChange={setENotify} label="Email notifications for new messages" />
                     </div>
-                    <button onClick={handleSave} disabled={eSaving}
+                    <button type="button" onClick={handleSave} disabled={eSaving}
                       className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition-colors">
                       {eSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                       {eSaving ? "Saving…" : "Save Changes"}

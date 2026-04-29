@@ -137,24 +137,25 @@ function LoginContent() {
               leftIcon={<Mail className="w-4 h-4" />}
               autoComplete="email"
             />
-            <div className="relative">
-              <Input
-                label="Password"
-                type={showPw ? "text" : "password"}
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                leftIcon={<Lock className="w-4 h-4" />}
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPw((p) => !p)}
-                className="absolute right-3 top-8 text-ink-faint hover:text-ink"
-              >
-                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <Input
+              label="Password"
+              type={showPw ? "text" : "password"}
+              placeholder="Your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              leftIcon={<Lock className="w-4 h-4" />}
+              rightIcon={
+                <button
+                  type="button"
+                  onClick={() => setShowPw((p) => !p)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-faint hover:text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                >
+                  {showPw ? <EyeOff className="w-4 h-4 shrink-0" strokeWidth={2} /> : <Eye className="w-4 h-4 shrink-0" strokeWidth={2} />}
+                </button>
+              }
+              autoComplete="current-password"
+            />
 
             <div className="flex justify-end mt-2">
               <button

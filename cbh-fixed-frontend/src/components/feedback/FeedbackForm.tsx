@@ -4,13 +4,13 @@ import { CheckCircle, Star, Lock } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { supabase } from "@/lib/supabase";
-import { getProfile } from "@/lib/api";
+import { getProfile, submitFeedback } from "@/lib/api";
 import { onProfileUpdated } from "@/lib/data-events";
 import Link from "next/link";
 
 const topics = ["General", "Supplier Issue", "Request Problem", "Suggestion", "Partnership", "Other"];
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 const SESSION_TIMEOUT_MS = 5000;
+const PROFILE_LOAD_TIMEOUT_MS = 12_000;
 
 export default function FeedbackForm() {
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -27,13 +27,16 @@ export default function FeedbackForm() {
   // Keep feedback identity synced with profile/account data
   useEffect(() => {
     let mounted = true;
-    const safeSet = (fn: () => void) => { if (mounted) fn(); };
+    /** Only for form fields — never skip session gate (Strict Mode unmount would leave "Loading…" forever). */
+    const safeForm = (fn: () => void) => {
+      if (mounted) fn();
+    };
 
-    const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+    const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> =>
       Promise.race([
         promise,
         new Promise<T>((_, reject) => {
-          setTimeout(() => reject(new Error("Session check timed out")), timeoutMs);
+          setTimeout(() => reject(new Error(label)), timeoutMs);
         }),
       ]);
 
@@ -41,24 +44,25 @@ export default function FeedbackForm() {
       try {
         const { data: { session } } = await withTimeout(
           supabase.auth.getSession(),
-          SESSION_TIMEOUT_MS
+          SESSION_TIMEOUT_MS,
+          "Session check timed out",
         );
         if (!session) {
-          safeSet(() => {
+          safeForm(() => {
             setIsLoggedIn(false);
             setToken(null);
           });
           return;
         }
 
-        safeSet(() => {
+        safeForm(() => {
           setIsLoggedIn(true);
           setToken(session.access_token);
         });
 
         try {
-          const profile = await getProfile();
-          safeSet(() => {
+          const profile = await withTimeout(getProfile(), PROFILE_LOAD_TIMEOUT_MS, "Profile load timed out");
+          safeForm(() => {
             setForm((p) => ({
               ...p,
               name: profile.name || session.user.user_metadata?.name || "",
@@ -66,7 +70,7 @@ export default function FeedbackForm() {
             }));
           });
         } catch {
-          safeSet(() => {
+          safeForm(() => {
             setForm((p) => ({
               ...p,
               name: session.user.user_metadata?.name || p.name || "",
@@ -75,18 +79,20 @@ export default function FeedbackForm() {
           });
         }
       } catch {
-        safeSet(() => {
+        safeForm(() => {
           setIsLoggedIn(false);
           setToken(null);
         });
       } finally {
-        safeSet(() => setSessionChecked(true));
+        setSessionChecked(true);
       }
     };
 
-    init();
+    void init();
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => onProfileUpdated((detail) => {
@@ -127,19 +133,18 @@ export default function FeedbackForm() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${BASE}/feedback`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(form),
+      await submitFeedback({
+        name: form.name,
+        email: form.email,
+        topic: form.topic,
+        subject: form.subject,
+        message: form.message,
+        ...(form.rating > 0 ? { rating: form.rating } : {}),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? "Failed to send");
       setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to send message. Please try again.";
+      setError(msg.includes("timed out") ? "Request timed out. Check your connection and try again." : msg);
     } finally {
       setLoading(false);
     }
@@ -179,7 +184,9 @@ export default function FeedbackForm() {
           <CheckCircle className="w-7 h-7 text-brand-600" />
         </div>
         <h3 className="font-display text-xl text-ink mb-2">Message Sent!</h3>
-        <p className="text-sm text-ink-muted mb-4">Thank you for your feedback. We&apos;ll reply to <strong>{form.email}</strong> within 24 hours.</p>
+        <p className="text-sm text-ink-muted mb-4">
+          Thank you. Your message was delivered to our team; we&apos;ll follow up at <strong>{form.email}</strong> when needed.
+        </p>
         <Button variant="secondary" size="sm" onClick={() => { setSubmitted(false); setForm(p => ({ ...p, topic: "", subject: "", message: "", rating: 0 })); }}>
           Send another message
         </Button>
@@ -189,7 +196,14 @@ export default function FeedbackForm() {
 
   return (
     <div className="max-w-xl mx-auto space-y-5">
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3"
+        >
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Name and email are pre-filled and locked since we're authenticated */}

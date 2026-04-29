@@ -508,6 +508,34 @@ export async function getUnreadCount(): Promise<number> {
   return data.unread;
 }
 
+export interface SubmitFeedbackPayload {
+  name: string;
+  email: string;
+  topic: string;
+  subject?: string;
+  message: string;
+  /** Omit or leave unset when not selected — sending 0 breaks API validation */
+  rating?: number;
+}
+
+/** POST /feedback — uses shared timeout, token refresh on 401, and rate-limit backoff */
+export async function submitFeedback(payload: SubmitFeedbackPayload): Promise<void> {
+  const body: Record<string, unknown> = {
+    name: payload.name,
+    email: payload.email,
+    topic: payload.topic,
+    subject: payload.subject ?? "",
+    message: payload.message,
+  };
+  if (typeof payload.rating === "number" && payload.rating >= 1 && payload.rating <= 5) {
+    body.rating = payload.rating;
+  }
+  await request<{ saved?: boolean }>("/feedback", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // ─── Upload (Supabase Storage) ────────────────────────────────────────────────
 
 /**
