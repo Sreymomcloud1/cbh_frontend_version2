@@ -22,6 +22,9 @@ router.get("/", validate(listBusinessesSchema, "query"), ctrl.list.bind(ctrl));
 // GET  /api/v1/businesses/me/profile  — must be defined BEFORE /:id to avoid route shadowing
 router.get("/me/profile", requireAuth, ctrl.getMine.bind(ctrl));
 
+// POST /api/v1/businesses/me/resubmit-review — owner resubmits rejected/revoked listing for admin review
+router.post("/me/resubmit-review", requireAuth, ctrl.resubmitForReview.bind(ctrl));
+
 // GET  /api/v1/businesses/:id
 router.get("/:id", ctrl.getOne.bind(ctrl));
 

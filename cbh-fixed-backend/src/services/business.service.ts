@@ -6,7 +6,7 @@ import type {
   UpdateEcoScoreInput,
   ListBusinessesInput,
 } from "@/validators/business.validators";
-import { NotFoundError, ForbiddenError, ConflictError } from "@/lib/errors";
+import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from "@/lib/errors";
 
 const LIST_SELECT = `
   id, name, tagline, category, sub_categories, tier,
@@ -179,6 +179,41 @@ export class BusinessService {
         updated_at:        new Date().toISOString(),
       })
       .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) throw new NotFoundError("Business");
+    return data as Business;
+  }
+
+  async resubmitForVerification(ownerId: string): Promise<Business> {
+    const biz = await this.getMyBusiness(ownerId);
+    if (!biz) throw new NotFoundError("Business");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vs = String((biz as any).verification_status ?? "").toLowerCase();
+    if (vs !== "rejected" && vs !== "revoked") {
+      throw new BadRequestError(
+        "You can only resubmit after an admin has rejected or unpublished your listing.",
+      );
+    }
+
+    const now = new Date().toISOString();
+    const { data, error } = await this.db
+      .from("businesses")
+      .update({
+        verification_status: "pending",
+        rejection_reason:    null,
+        is_verified:         false,
+        is_active:           false,
+        verified_at:           null,
+        verified_by:           null,
+        rejected_at:           null,
+        rejected_by:           null,
+        updated_at:           now,
+      })
+      .eq("id", biz.id)
+      .eq("owner_id", ownerId)
       .select()
       .single();
     if (error) throw error;

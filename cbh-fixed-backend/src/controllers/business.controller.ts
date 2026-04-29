@@ -68,4 +68,12 @@ export class BusinessController {
       sendSuccess(res, { deleted: true });
     } catch (err) { next(err); }
   }
+
+  async resubmitForReview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const service = new BusinessService(req.supabase);
+      const business = await service.resubmitForVerification(req.user.id);
+      sendSuccess(res, business);
+    } catch (err) { next(err); }
+  }
 }

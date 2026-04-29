@@ -393,6 +393,17 @@ export async function updateEcoScore(id: string, breakdown: {
   return businessToSupplier(data);
 }
 
+/** Owner: put a rejected or revoked listing back in the admin review queue */
+export async function resubmitBusinessForReview(): Promise<Supplier> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await request<any>("/businesses/me/resubmit-review", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  clearMyBusinessCache();
+  return businessToSupplier(data);
+}
+
 // ─── Requests ─────────────────────────────────────────────────────────────────
 
 export interface ListRequestsParams {

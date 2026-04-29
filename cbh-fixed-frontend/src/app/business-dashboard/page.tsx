@@ -15,9 +15,10 @@ import {
   getMyBusiness, 
   listBusinessRequests, 
   updateBusiness, 
-  listMyConversations, // Added for unread counting
+  listMyConversations,
   updateRequestStatus,
   deleteAccount,
+  resubmitBusinessForReview,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
@@ -127,6 +128,7 @@ function BusinessDashboardInner() {
   const [loading,  setLoading]  = useState(true);
   const [toast,    setToast]    = useState<{ msg: string; ok: boolean } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [resubmitReviewLoading, setResubmitReviewLoading] = useState(false);
 
   // Edit state
   const [eName,    setEName]    = useState("");
@@ -158,6 +160,21 @@ function BusinessDashboardInner() {
 
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
+
+  const handleResubmitForReview = async () => {
+    if (!biz || resubmitReviewLoading) return;
+    setResubmitReviewLoading(true);
+    try {
+      const updated = await resubmitBusinessForReview();
+      setBiz(updated);
+      notifyBusinessDataChanged({ id: updated.id, action: "updated" });
+      showToast("Submitted for review. An admin will reassess your listing.", true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not submit for review.", false);
+    } finally {
+      setResubmitReviewLoading(false);
+    }
+  };
 
   useEffect(() => {
     logoUploadingRef.current = logoUploading;
@@ -468,6 +485,17 @@ function BusinessDashboardInner() {
                 </p>
               ) : null}
             </>
+          )}
+          {(vs === "rejected" || vs === "revoked") && (
+            <button
+              type="button"
+              onClick={handleResubmitForReview}
+              disabled={resubmitReviewLoading}
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 transition-colors"
+            >
+              {resubmitReviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {resubmitReviewLoading ? "Submitting…" : "Submit for admin review"}
+            </button>
           )}
         </div>
       </div>

@@ -10,10 +10,10 @@ import {
 } from "lucide-react";
 import {
   getProfile, listMyRequests, updateProfile, deleteAccount,
-  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness, uploadAvatar,
+  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness, uploadAvatar, resubmitBusinessForReview,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor } from "@/lib/utils";
-import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged } from "@/lib/data-events";
+import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged, notifyBusinessDataChanged } from "@/lib/data-events";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
 import type { User, QuoteRequest, Supplier } from "@/types";
 import Link from "next/link";
@@ -35,6 +35,14 @@ function getBusinessStatusMeta(biz: Supplier) {
       className: "border-brand-200 bg-brand-50/80",
       iconClassName: "text-brand-600",
       description: "Your business is approved and publicly visible in Explore Suppliers.",
+    };
+  }
+  if (status === "rejected") {
+    return {
+      label: "Rejected",
+      className: "border-red-200 bg-red-50/90",
+      iconClassName: "text-red-600",
+      description: "Your listing is not publicly visible. Update your profile if needed and submit again for admin review.",
     };
   }
   if (status === "revoked") {
@@ -180,6 +188,7 @@ useEffect(() => {
   const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null);
   const [deleting,     setDeleting]     = useState(false);
   const [myBusiness,   setMyBusiness]   = useState<Supplier | null>(null);
+  const [resubmitBizLoading, setResubmitBizLoading] = useState(false);
 
   // Review modal state
   const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string } | null>(null);
@@ -204,6 +213,20 @@ useEffect(() => {
   }, [avatarUploading]);
 
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
+
+  const handleResubmitBizForReview = async () => {
+    setResubmitBizLoading(true);
+    try {
+      const updated = await resubmitBusinessForReview();
+      setMyBusiness(updated);
+      notifyBusinessDataChanged({ id: updated.id, action: "updated" });
+      showToast("Submitted for review. An admin will reassess your listing.", true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not submit for review.", false);
+    } finally {
+      setResubmitBizLoading(false);
+    }
+  };
 
   // ── Load profile + requests ───────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -527,6 +550,19 @@ useEffect(() => {
                         <span className="font-medium">Admin note: </span>
                         {myBusiness.rejectionReason}
                       </p>
+                    )}
+                    {myBusiness
+                      && (String(myBusiness.verificationStatus ?? "") === "rejected"
+                        || String(myBusiness.verificationStatus ?? "") === "revoked") && (
+                      <button
+                        type="button"
+                        onClick={handleResubmitBizForReview}
+                        disabled={resubmitBizLoading}
+                        className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                      >
+                        {resubmitBizLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        {resubmitBizLoading ? "Submitting…" : "Submit for admin review"}
+                      </button>
                     )}
                   </div>
                 </div>
