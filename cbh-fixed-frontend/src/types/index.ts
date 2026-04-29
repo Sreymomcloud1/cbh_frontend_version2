@@ -97,7 +97,10 @@ export interface Supplier {
   // ✅ ADD THESE (fixes your TypeScript error)
   // ─────────────────────────────────────────────
 
-  verificationStatus?: "pending" | "approved" | "rejected";
+  /** Mirrors backend `verification_status` */
+  verificationStatus?: "pending" | "verified" | "rejected" | "revoked" | "approved";
+  /** Admin rejection/revocation note when applicable */
+  rejectionReason?: string | null;
   isActive: boolean;
 
   notifyByEmail: boolean;
