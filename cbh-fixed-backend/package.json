@@ -4,7 +4,7 @@
   "description": "CBH Platform — Production backend API (Node.js + Express + TypeScript + Supabase)",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node --files -r tsconfig-paths/register src/index.ts",
+    "dev": "tsx watch -r tsconfig-paths/register src/index.ts",
     "build": "tsc && tsc-alias",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
