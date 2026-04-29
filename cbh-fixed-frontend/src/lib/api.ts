@@ -4,7 +4,7 @@
  * Token comes from the shared Supabase session — never from localStorage.
  */
 
-import { supabase, getAccessToken, clearTokenCache } from "@/lib/supabase";
+import { supabase, getAccessToken, refreshAccessToken, clearTokenCache } from "@/lib/supabase";
 import type {
   Supplier,
   QuoteRequest,
@@ -83,6 +83,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   let lastError: Error | null = null;
+  let retriedWithRefresh = false;
 
   for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
     const res = await fetchWithTimeout(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
@@ -93,7 +94,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
 
     if (res.status === 401) {
-      // Token was rejected — clear cache and redirect
+      // Attempt one silent refresh before forcing logout.
+      if (!retriedWithRefresh) {
+        retriedWithRefresh = true;
+        const refreshedToken = await refreshAccessToken();
+        if (refreshedToken) {
+          headers.Authorization = `Bearer ${refreshedToken}`;
+          continue;
+        }
+      }
+
+      // Token cannot be refreshed — clear cache and redirect to login.
       clearTokenCache();
       clearMyBusinessCache();
       if (typeof window !== "undefined") {

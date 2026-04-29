@@ -19,11 +19,31 @@ app.use(helmet());
 
 // ── CORS ──────────────────────────────────────────────────────────────────
 const allowedOrigins = env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
+const allowedOriginMatchers = allowedOrigins
+  .filter(Boolean)
+  .map((origin) => {
+    if (origin.includes("*")) {
+      const escaped = origin.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+      return new RegExp(`^${escaped}$`);
+    }
+    return origin;
+  });
+
+function isAllowedOrigin(origin: string): boolean {
+  if (allowedOriginMatchers.some((entry) => (typeof entry === "string" ? entry === origin : entry.test(origin)))) {
+    return true;
+  }
+  if (env.ALLOW_TRYCLOUDFLARE_ORIGINS && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(origin)) {
+    return true;
+  }
+  return false;
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. Postman, server-to-server)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
         callback(new Error(`CORS: origin ${origin} not allowed`));
