@@ -35,11 +35,6 @@ const nav: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "settings",  label: "Settings", icon: Settings },
 ];
 
-/** Listing is hidden from Explore until verification passes */
-function listingNotPublic(biz: Supplier): boolean {
-  return ["pending", "rejected", "revoked"].includes(String(biz.verificationStatus ?? "pending"));
-}
-
 function verificationSidebarBadge(biz: Supplier): { label: string; className: string } {
   const v = String(biz.verificationStatus ?? "pending");
   if (biz.verified || v === "verified" || v === "approved") {
@@ -359,6 +354,7 @@ function BusinessDashboardInner() {
 
   const verBadge = verificationSidebarBadge(biz);
   const vs = String(biz.verificationStatus ?? "pending");
+  const isApproved = biz.verified || vs === "verified" || vs === "approved";
 
   const buyReqs    = requests.filter(r => r.purpose === "buy").length;
   const collabReqs = requests.filter(r => r.purpose === "collaborate").length;
@@ -396,63 +392,72 @@ function BusinessDashboardInner() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
 
-      {listingNotPublic(biz) && (
-        <div
-          className={cn(
-            "mb-6 rounded-2xl border p-4 sm:p-5 flex gap-3 sm:gap-4",
-            vs === "pending" && "border-amber-200 bg-amber-50/90",
-            vs === "rejected" && "border-red-200 bg-red-50/90",
-            vs === "revoked" && "border-stone-300 bg-stone-50"
+      <div
+        className={cn(
+          "mb-6 rounded-2xl border p-4 sm:p-5 flex gap-3 sm:gap-4",
+          isApproved && "border-brand-200 bg-brand-50/80",
+          vs === "pending" && "border-amber-200 bg-amber-50/90",
+          vs === "rejected" && "border-red-200 bg-red-50/90",
+          vs === "revoked" && "border-stone-300 bg-stone-50"
+        )}
+      >
+        <div className="shrink-0 mt-0.5">
+          {isApproved ? (
+            <CheckCircle className="w-5 h-5 text-brand-600" />
+          ) : vs === "pending" ? (
+            <Clock className="w-5 h-5 text-amber-600" />
+          ) : (
+            <AlertCircle className={cn("w-5 h-5", vs === "rejected" ? "text-red-600" : "text-stone-600")} />
           )}
-        >
-          <div className="shrink-0 mt-0.5">
-            {vs === "pending" ? (
-              <Clock className="w-5 h-5 text-amber-600" />
-            ) : (
-              <AlertCircle className={cn("w-5 h-5", vs === "rejected" ? "text-red-600" : "text-stone-600")} />
-            )}
-          </div>
-          <div className="min-w-0 text-sm">
-            {vs === "pending" && (
-              <>
-                <p className="font-semibold text-ink mb-1">Pending admin approval</p>
-                <p className="text-ink-muted leading-relaxed">
-                  Your listing is under review. You can use your dashboard, profile, and messages now;
-                  once an admin approves your business, it will appear in Explore Suppliers.
-                </p>
-              </>
-            )}
-            {vs === "rejected" && (
-              <>
-                <p className="font-semibold text-ink mb-1">Registration not approved</p>
-                <p className="text-ink-muted leading-relaxed">
-                  Your business is not listed publicly. Update your profile if needed and contact support if you have questions.
-                </p>
-                {biz.rejectionReason ? (
-                  <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-red-100 px-3 py-2">
-                    <span className="font-medium text-ink">Reason: </span>
-                    {biz.rejectionReason}
-                  </p>
-                ) : null}
-              </>
-            )}
-            {vs === "revoked" && (
-              <>
-                <p className="font-semibold text-ink mb-1">Listing unpublished</p>
-                <p className="text-ink-muted leading-relaxed">
-                  Your business is no longer shown in Explore Suppliers. You still have access to your dashboard here.
-                </p>
-                {biz.rejectionReason ? (
-                  <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-stone-200 px-3 py-2">
-                    <span className="font-medium text-ink">Note: </span>
-                    {biz.rejectionReason}
-                  </p>
-                ) : null}
-              </>
-            )}
-          </div>
         </div>
-      )}
+        <div className="min-w-0 text-sm">
+          {isApproved && (
+            <>
+              <p className="font-semibold text-ink mb-1">Business account approved</p>
+              <p className="text-ink-muted leading-relaxed">
+                Your business is verified and visible in Explore Suppliers. Keep your profile updated to attract more buyers.
+              </p>
+            </>
+          )}
+          {vs === "pending" && (
+            <>
+              <p className="font-semibold text-ink mb-1">Pending admin approval</p>
+              <p className="text-ink-muted leading-relaxed">
+                Your listing is under review. You can use your dashboard, profile, and messages now;
+                once an admin approves your business, it will appear in Explore Suppliers.
+              </p>
+            </>
+          )}
+          {vs === "rejected" && (
+            <>
+              <p className="font-semibold text-ink mb-1">Registration not approved</p>
+              <p className="text-ink-muted leading-relaxed">
+                Your business is not listed publicly. Update your profile if needed and contact support if you have questions.
+              </p>
+              {biz.rejectionReason ? (
+                <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-red-100 px-3 py-2">
+                  <span className="font-medium text-ink">Reason: </span>
+                  {biz.rejectionReason}
+                </p>
+              ) : null}
+            </>
+          )}
+          {vs === "revoked" && (
+            <>
+              <p className="font-semibold text-ink mb-1">Listing unpublished</p>
+              <p className="text-ink-muted leading-relaxed">
+                Your business is no longer shown in Explore Suppliers. You still have access to your dashboard here.
+              </p>
+              {biz.rejectionReason ? (
+                <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-stone-200 px-3 py-2">
+                  <span className="font-medium text-ink">Note: </span>
+                  {biz.rejectionReason}
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
 
       <div className="flex gap-8">
         {/* Sidebar */}

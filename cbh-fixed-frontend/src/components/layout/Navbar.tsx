@@ -1,10 +1,10 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getUnreadCount } from "@/lib/api";
+import { getMyBusiness, getUnreadCount } from "@/lib/api";
 import { onProfileUpdated } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import Button from "@/components/ui/Button";
@@ -28,10 +28,11 @@ interface AuthUser {
   initials: string;
   role: string;
   avatarUrl: string | null;
+  businessStatusLabel?: "Pending" | "Approved" | "Revoked" | "Rejected";
+  businessStatusClassName?: string;
 }
 
 export default function Navbar() {
-  const router = useRouter();
   const pathname = usePathname();
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,29 +50,52 @@ export default function Navbar() {
   const buildAuthUser = useCallback(async (userId: string, email: string): Promise<AuthUser> => {
     const { data } = await supabase
       .from("profiles")
-      .select("name, role, avatar_url")
+      .select("name, role, avatar_url, pending_business")
       .eq("id", userId)
       .single();
     
-    const p = data as any;
+    const p = (data ?? {}) as { name?: string; role?: string; avatar_url?: string | null; pending_business?: boolean };
     const name = p?.name ?? email.split("@")[0] ?? "User";
     const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+    const shouldLoadBusinessStatus = p?.role === "business" || p?.pending_business === true;
+    const myBusiness = shouldLoadBusinessStatus ? await getMyBusiness().catch(() => null) : null;
+    const verification = String(myBusiness?.verificationStatus ?? "pending");
+    const isApproved = Boolean(myBusiness && (myBusiness.verified || verification === "verified" || verification === "approved"));
+    const businessStatusLabel =
+      !myBusiness ? undefined :
+      isApproved ? "Approved" :
+      verification === "revoked" ? "Revoked" :
+      verification === "rejected" ? "Rejected" :
+      "Pending";
+    const businessStatusClassName =
+      !myBusiness ? undefined :
+      isApproved ? "bg-brand-50 text-brand-700 border-brand-200" :
+      verification === "revoked" ? "bg-stone-100 text-stone-700 border-stone-200" :
+      verification === "rejected" ? "bg-red-50 text-red-700 border-red-200" :
+      "bg-amber-50 text-amber-800 border-amber-200";
+
     return {
       id: userId,
       name,
       initials,
       role: p?.role ?? "buyer",
       avatarUrl: p?.avatar_url ? `${p.avatar_url}?t=${Date.now()}` : null,
+      businessStatusLabel,
+      businessStatusClassName,
     };
   }, []);
 
   // Step 3 logic wrapped in a reusable function
-  const fetchUnreadCount = useCallback(async (_userId: string) => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const count = await getUnreadCount();
       setUnreadCount(count ?? 0);
     } catch (err) {
-      console.error("Failed to fetch unread count", err);
+      // Ignore expected throttling noise while polling.
+      const message = err instanceof Error ? err.message.toLowerCase() : "";
+      if (!message.includes("too many requests")) {
+        console.error("Failed to fetch unread count", err);
+      }
     }
   }, []);
 
@@ -105,10 +129,10 @@ export default function Navbar() {
 
   // Auth & Polling logic
   useEffect(() => {
-    const startPolling = (userId: string) => {
+    const startPolling = () => {
       if (pollRef.current) clearInterval(pollRef.current);
-      fetchUnreadCount(userId);
-      pollRef.current = setInterval(() => fetchUnreadCount(userId), 30000);
+      fetchUnreadCount();
+      pollRef.current = setInterval(() => fetchUnreadCount(), 30000);
     };
 
     const stopPolling = () => {
@@ -122,7 +146,7 @@ export default function Navbar() {
         try {
           const u = await buildAuthUser(session.user.id, session.user.email ?? "");
           setAuthUser(u);
-          startPolling(session.user.id);
+          startPolling();
         } catch { setAuthUser(null); }
       }
       setAuthReady(true);
@@ -140,7 +164,7 @@ export default function Navbar() {
       try {
         const u = await buildAuthUser(session.user.id, session.user.email ?? "");
         setAuthUser(u);
-        startPolling(session.user.id);
+        startPolling();
       } catch {
         setAuthUser(null);
       }
@@ -272,6 +296,11 @@ export default function Navbar() {
                 className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-surface-50 transition-colors">
                 <AvatarCircle />
                 <span className="text-sm font-medium text-ink">{authUser.name.split(" ")[0]}</span>
+                {authUser.businessStatusLabel && authUser.businessStatusClassName && (
+                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", authUser.businessStatusClassName)}>
+                    {authUser.businessStatusLabel}
+                  </span>
+                )}
                 <ChevronDown className={cn("w-3.5 h-3.5 text-ink-faint transition-transform", userMenuOpen && "rotate-180")} />
               </button>
 
@@ -286,6 +315,11 @@ export default function Navbar() {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-ink truncate">{authUser.name}</p>
                       <p className="text-[10px] text-ink-faint capitalize">{authUser.role}</p>
+                      {authUser.businessStatusLabel && authUser.businessStatusClassName && (
+                        <span className={cn("mt-1 inline-flex text-[10px] px-1.5 py-0.5 rounded-full border font-medium", authUser.businessStatusClassName)}>
+                          {authUser.businessStatusLabel}
+                        </span>
+                      )}
                     </div>
                   </Link>
                   <Link href={dashboardHref} onClick={() => setUserMenuOpen(false)}
@@ -348,6 +382,11 @@ export default function Navbar() {
                     <div>
                       <p className="text-sm font-medium text-ink">{authUser.name}</p>
                       <p className="text-xs text-ink-faint capitalize">{authUser.role}</p>
+                      {authUser.businessStatusLabel && authUser.businessStatusClassName && (
+                        <span className={cn("mt-1 inline-flex text-[10px] px-1.5 py-0.5 rounded-full border font-medium", authUser.businessStatusClassName)}>
+                          {authUser.businessStatusLabel}
+                        </span>
+                      )}
                     </div>
                   </Link>
                   <Link href={dashboardHref}
