@@ -25,6 +25,11 @@ import type {
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 const REQUEST_TIMEOUT_MS = 15000;
+const RATE_LIMIT_RETRY_MS = 1200;
+const MAX_RATE_LIMIT_RETRIES = 1;
+const MY_BUSINESS_CACHE_MS = 15000;
+let myBusinessCache: { value: Supplier | null; expiresAt: number } | null = null;
+let myBusinessInFlight: Promise<Supplier | null> | null = null;
 
 async function fetchWithTimeout(input: string, init: RequestInit = {}) {
   const controller = new AbortController();
@@ -39,6 +44,22 @@ async function fetchWithTimeout(input: string, init: RequestInit = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(retryAfterHeader: string | null): number {
+  if (!retryAfterHeader) return RATE_LIMIT_RETRY_MS;
+  const seconds = Number(retryAfterHeader);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds * 1000);
+  const asDate = Date.parse(retryAfterHeader);
+  if (!Number.isNaN(asDate)) {
+    const delta = asDate - Date.now();
+    return delta > 0 ? delta : RATE_LIMIT_RETRY_MS;
+  }
+  return RATE_LIMIT_RETRY_MS;
 }
 
 // ─── Core request helper ──────────────────────────────────────────────────────
@@ -61,22 +82,38 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error("Not authenticated");
   }
 
-  const res = await fetchWithTimeout(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
-  const json = await res.json();
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+    const res = await fetchWithTimeout(`${BASE_URL}${path}`, { ...options, cache: "no-store", headers });
+    const json = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      return json.data as T;
+    }
+
     if (res.status === 401) {
       // Token was rejected — clear cache and redirect
       clearTokenCache();
+      clearMyBusinessCache();
       if (typeof window !== "undefined") {
         await supabase.auth.signOut();
         window.location.href = "/auth/login";
       }
     }
-    throw new Error(json?.error?.message ?? `Request failed: ${res.status}`);
+
+    lastError = new Error(json?.error?.message ?? `Request failed: ${res.status}`);
+
+    if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const retryInMs = parseRetryAfterMs(res.headers.get("retry-after"));
+      await sleep(retryInMs);
+      continue;
+    }
+
+    throw lastError;
   }
 
-  return json.data as T;
+  throw lastError ?? new Error("Request failed.");
 }
 
 // ─── Public request helper (no auth required) ─────────────────────────────────
@@ -198,7 +235,7 @@ export function apiConversationToConversation(c: any): Conversation {
 }
 
 // Kept for backward compat — no-op now
-export function setAuthToken(_token: string) {}
+export function setAuthToken(_token: string) { void _token; }
 export function clearAuthToken() {}
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
@@ -266,25 +303,53 @@ export async function getBusinessById(id: string): Promise<Supplier> {
 }
 
 export async function getMyBusiness(): Promise<Supplier | null> {
+  const now = Date.now();
+  if (myBusinessCache && myBusinessCache.expiresAt > now) {
+    return myBusinessCache.value;
+  }
+  if (myBusinessInFlight) return myBusinessInFlight;
+
+  myBusinessInFlight = (async () => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await request<any>("/businesses/me/profile");
-    return data ? businessToSupplier(data) : null;
+      const value = data ? businessToSupplier(data) : null;
+      myBusinessCache = { value, expiresAt: Date.now() + MY_BUSINESS_CACHE_MS };
+      return value;
   } catch (err) {
-    if (err instanceof Error && err.message.toLowerCase().includes("not found")) return null;
+      if (err instanceof Error && err.message.toLowerCase().includes("not found")) {
+        myBusinessCache = { value: null, expiresAt: Date.now() + MY_BUSINESS_CACHE_MS };
+        return null;
+      }
     throw err;
-  }
+    } finally {
+      myBusinessInFlight = null;
+    }
+  })();
+
+  return myBusinessInFlight;
+}
+
+function clearMyBusinessCache() {
+  myBusinessCache = null;
+  myBusinessInFlight = null;
+}
+
+export function clearBusinessApiCache() {
+  clearMyBusinessCache();
 }
 
 export async function createBusiness(body: CreateBusinessPayload): Promise<Supplier> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>("/businesses", { method: "POST", body: JSON.stringify(body) });
+  clearMyBusinessCache();
   return businessToSupplier(data);
 }
 
 export async function updateBusiness(id: string, body: Partial<CreateBusinessPayload>): Promise<Supplier> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/businesses/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+  clearMyBusinessCache();
   return businessToSupplier(data);
 }
 
@@ -297,6 +362,7 @@ export async function updateEcoScore(id: string, breakdown: {
     method: "PATCH",
     body: JSON.stringify({ breakdown }),
   });
+  clearMyBusinessCache();
   return businessToSupplier(data);
 }
 

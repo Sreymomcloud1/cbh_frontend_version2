@@ -10,12 +10,12 @@ import {
 } from "lucide-react";
 import {
   getProfile, listMyRequests, updateProfile, deleteAccount,
-  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses,
+  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor } from "@/lib/utils";
 import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged } from "@/lib/data-events";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
-import type { User, QuoteRequest } from "@/types";
+import type { User, QuoteRequest, Supplier } from "@/types";
 import Link from "next/link";
 
 type Tab = "overview" | "messages" | "saved" | "settings";
@@ -26,6 +26,32 @@ const NAV: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "saved",     label: "Saved",     icon: Bookmark       },
   { id: "settings",  label: "Settings",  icon: Settings       },
 ];
+
+function getBusinessStatusMeta(biz: Supplier) {
+  const status = String(biz.verificationStatus ?? "pending");
+  if (biz.verified || status === "verified" || status === "approved") {
+    return {
+      label: "Approved",
+      className: "border-brand-200 bg-brand-50/80",
+      iconClassName: "text-brand-600",
+      description: "Your business is approved and publicly visible in Explore Suppliers.",
+    };
+  }
+  if (status === "revoked") {
+    return {
+      label: "Revoked",
+      className: "border-stone-300 bg-stone-50",
+      iconClassName: "text-stone-600",
+      description: "Your listing is currently unpublished from Explore Suppliers, but you can still access your account.",
+    };
+  }
+  return {
+    label: "Pending",
+    className: "border-amber-200 bg-amber-50/90",
+    iconClassName: "text-amber-600",
+    description: "Your business is under admin review. You can keep updating your account while approval is in progress.",
+  };
+}
 
 // ── Reusable input ────────────────────────────────────────────────────────────
 const InputRow = ({
@@ -153,6 +179,7 @@ useEffect(() => {
   const [loading,      setLoading]      = useState(true);
   const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null);
   const [deleting,     setDeleting]     = useState(false);
+  const [myBusiness,   setMyBusiness]   = useState<Supplier | null>(null);
 
   // Review modal state
   const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string } | null>(null);
@@ -190,6 +217,8 @@ useEffect(() => {
       setSName(profile.name);
       setSEmail(p.email ?? profile.email ?? "");
       setSPhone(p.phone ?? p.phone_number ?? "");
+      const mine = await getMyBusiness().catch(() => null);
+      setMyBusiness(mine);
       const ids = savedRows
         .map((row) => (row as { business?: { id?: string } | null }).business?.id)
         .filter((id): id is string => Boolean(id));
@@ -393,6 +422,7 @@ useEffect(() => {
   const buyCount    = requests.filter(r => r.purpose === "buy").length;
   const collabCount = requests.filter(r => r.purpose === "collaborate").length;
   const investCount = requests.filter(r => r.purpose === "invest").length;
+  const businessStatus = myBusiness ? getBusinessStatusMeta(myBusiness) : null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -471,6 +501,26 @@ useEffect(() => {
                 </h1>
                 <p className="text-sm text-ink-muted">Your activity on CBH.</p>
               </div>
+
+              {businessStatus && (
+                <div className={cn("rounded-2xl border p-4 sm:p-5 flex items-start gap-3", businessStatus.className)}>
+                  <AlertCircle className={cn("w-5 h-5 shrink-0 mt-0.5", businessStatus.iconClassName)} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink mb-1">
+                      Business Account Status: {businessStatus.label}
+                    </p>
+                    <p className="text-sm text-ink-muted leading-relaxed">
+                      {businessStatus.description}
+                    </p>
+                    {myBusiness?.rejectionReason && (
+                      <p className="mt-2 text-xs text-ink rounded-lg bg-white/80 border border-surface-200 px-3 py-2">
+                        <span className="font-medium">Admin note: </span>
+                        {myBusiness.rejectionReason}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Request type breakdown — updates when requests change */}
               <div className="grid grid-cols-3 gap-4">
@@ -589,7 +639,7 @@ useEffect(() => {
                   <Bookmark className="w-10 h-10 text-ink-faint mx-auto mb-3" />
                   <h3 className="font-semibold text-ink mb-1">No saved businesses yet</h3>
                   <p className="text-sm text-ink-muted mb-4">
-                    Complete a conversation with a business and they'll appear here automatically.
+                    Complete a conversation with a business and they will appear here automatically.
                   </p>
                   <Link href="/explore"
                     className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors">
