@@ -162,7 +162,7 @@ function BusinessModal({
 }: {
   biz: BusinessFull;
   onClose: () => void;
-  onAction: (id: string, action: "verify" | "reject" | "revoke", reason?: string) => Promise<void>;
+  onAction: (id: string, action: "verify" | "reject" | "revoke", reason?: string) => Promise<boolean>;
 }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [reason, setReason] = useState("");
@@ -172,9 +172,12 @@ function BusinessModal({
   const doAction = async (action: "verify" | "reject" | "revoke") => {
     if ((action === "reject" || action === "revoke") && !reason.trim()) return;
     setActionLoading(true);
-    await onAction(biz.id, action, reason.trim() || undefined);
-    setActionLoading(false);
-    onClose();
+    try {
+      const ok = await onAction(biz.id, action, reason.trim() || undefined);
+      if (ok) onClose();
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
@@ -320,8 +323,8 @@ function BusinessModal({
               <div className="space-y-3">
                 <p className="text-sm text-stone-300">
                   {confirmAction === "reject"
-                    ? "Provide a rejection reason (required). It will be saved and emailed to the business contact."
-                    : "Provide a reason for revoking verification (required). It will be saved and emailed to the business contact."}
+                    ? "Provide a rejection reason (required). It will be saved and visible to the business in their Messages tab."
+                    : "Provide a reason for revoking verification (required). It will be saved and visible to the business in their Messages tab."}
                 </p>
                 <label className="block text-xs font-semibold text-stone-400">
                   {confirmAction === "reject" ? "Rejection reason" : "Revocation reason"} <span className="text-red-400">*</span>
@@ -346,7 +349,7 @@ function BusinessModal({
               <div className="space-y-3">
                 {(biz.verification_status === "pending" || biz.verification_status === "rejected" || biz.verification_status === "revoked") && (
                   <p className="text-xs text-stone-500">
-                    Approving publishes the listing and emails the business contact. Reject or revoke requires a reason and emails the owner.
+                    Approving publishes the listing on Explore. Reject or revoke requires a reason; the owner is notified in-app (Messages tab).
                   </p>
                 )}
               <div className="flex flex-wrap gap-2">
@@ -516,29 +519,36 @@ export default function AdminPage() {
   };
 
   // Verification action
-  const handleVerifyAction = async (id: string, action: "verify" | "reject" | "revoke", reason?: string) => {
+  const handleVerifyAction = async (id: string, action: "verify" | "reject" | "revoke", reason?: string): Promise<boolean> => {
     setActionId(id);
-    const res = await adminFetch(`/admin/businesses/${id}/verify`, {
-      method: "POST",
-      body: JSON.stringify({ action, reason }),
-    });
-    setActionId(null);
-    if (res.success) {
-      notifyBusinessDataChanged({
-        id,
-        action: action === "verify" ? "verified" : action === "revoke" ? "revoked" : "updated",
+    try {
+      const res = await adminFetch(`/admin/businesses/${id}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ action, reason }),
       });
-      setSelectedBiz(null);
-      setTab("businesses");
-      router.replace("/admin");
-      showToast(
-        action === "verify" ? "Business verified and published ✓" :
-        action === "reject" ? "Business rejected." : "Verification revoked.",
-        action === "verify"
-      );
-      loadAll();
-    } else {
+      if (res.success) {
+        notifyBusinessDataChanged({
+          id,
+          action: action === "verify" ? "verified" : action === "revoke" ? "revoked" : "updated",
+        });
+        setSelectedBiz(null);
+        setTab("businesses");
+        router.replace("/admin");
+        showToast(
+          action === "verify" ? "Business verified and published ✓" :
+          action === "reject" ? "Business rejected." : "Verification revoked.",
+          action === "verify",
+        );
+        loadAll();
+        return true;
+      }
       showToast(res.error?.message ?? "Action failed", false);
+      return false;
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Action failed", false);
+      return false;
+    } finally {
+      setActionId(null);
     }
   };
 

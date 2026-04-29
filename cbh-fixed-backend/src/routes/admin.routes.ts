@@ -10,8 +10,6 @@ import { env } from "@/config/env";
 import {
   isSmtpConfigured,
   sendAdminCreatedOwnerCredentialsEmail,
-  sendBusinessVerificationApprovedEmail,
-  sendBusinessVerificationRejectedEmail,
 } from "@/lib/email";
 
 const router = Router();
@@ -311,46 +309,9 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
       reason:      reason ?? null,
     });
 
-    // Notify business contact email (best-effort; admin action already persisted)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const row = data as any;
-    const contactEmail = String(row.contact_email ?? "").trim();
-    const businessName = String(row.name ?? "Your listing");
-    let ownerDisplayName = businessName;
-    if (ownerId) {
-      const { data: prof } = await supabaseAdmin.from("profiles").select("name").eq("id", ownerId).maybeSingle();
-      const n = (prof as { name?: string } | null)?.name?.trim();
-      if (n) ownerDisplayName = n;
-    }
-    const siteBase = (env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-    const dashboardUrl = `${siteBase}/business-dashboard`;
-    const loginUrl = `${siteBase}/auth/login`;
+    const businessName = String((data as { name?: string }).name ?? "Your listing");
 
-    if (contactEmail) {
-      try {
-        if (action === "verify") {
-          await sendBusinessVerificationApprovedEmail({
-            toEmail: contactEmail,
-            ownerName: ownerDisplayName,
-            businessName,
-            dashboardUrl,
-          });
-        } else {
-          await sendBusinessVerificationRejectedEmail({
-            toEmail: contactEmail,
-            ownerName: ownerDisplayName,
-            businessName,
-            kind: action === "revoke" ? "revoked" : "rejected",
-            reason: reason?.trim() || "No additional details provided.",
-            loginUrl,
-          });
-        }
-      } catch (e) {
-        console.error("[admin/businesses/:id/verify] Owner notification email failed:", e);
-      }
-    }
-
-    // Also deliver an in-app message to business Messages tab (best-effort).
+    // Deliver an in-app message to the business Messages tab (best-effort; no SMTP).
     try {
       await sendVerificationMessageToBusinessOwner({
         adminId,
