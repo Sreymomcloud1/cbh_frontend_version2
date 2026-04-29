@@ -44,6 +44,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 let _cachedToken: string | null = null;
 let _initialized = false;
+const TOKEN_REFRESH_BUFFER_SECONDS = 90;
+
+function parseJwtExp(token: string): number | null {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+function tokenNeedsRefresh(token: string): boolean {
+  const exp = parseJwtExp(token);
+  if (!exp) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return exp - nowSec <= TOKEN_REFRESH_BUFFER_SECONDS;
+}
 
 // Keep cache fresh whenever auth state changes
 supabase.auth.onAuthStateChange((_event, session) => {
@@ -52,13 +73,24 @@ supabase.auth.onAuthStateChange((_event, session) => {
 });
 
 export async function getAccessToken(): Promise<string | null> {
+  if (!hasSupabaseEnv) return null;
   // If we've already seen an auth event, return cache directly (no storage read)
-  if (_initialized) return _cachedToken;
+  if (_initialized) {
+    if (_cachedToken && tokenNeedsRefresh(_cachedToken)) {
+      const refreshed = await refreshAccessToken();
+      return refreshed;
+    }
+    return _cachedToken;
+  }
 
   // First call before any auth event — read storage once, then mark initialized
   const { data: { session } } = await supabase.auth.getSession();
   _cachedToken  = session?.access_token ?? null;
   _initialized  = true;
+  if (_cachedToken && tokenNeedsRefresh(_cachedToken)) {
+    const refreshed = await refreshAccessToken();
+    return refreshed;
+  }
   return _cachedToken;
 }
 
