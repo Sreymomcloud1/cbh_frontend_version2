@@ -174,6 +174,8 @@ export function businessToSupplier(b: any): Supplier {
         packaging: 0, sourcing: 0, energy: 0, waste: 0, delivery: 0, practices: 0,
       },
     },
+    ecoDescription: b.eco_description ?? undefined,
+    taxId: b.tax_id ?? undefined,
     discountPercent: b.discount_percent ?? undefined,
     bulkSupport: b.bulk_support ?? false,
     bulkCapacity: b.bulk_capacity ?? undefined,

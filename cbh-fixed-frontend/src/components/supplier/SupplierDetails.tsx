@@ -3,18 +3,31 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  MapPin, CheckCircle, Leaf, Package, Mail, Globe, Star,
-  ChevronLeft, ExternalLink, Facebook, Send, Handshake, TrendingUp, ArrowLeft,
+  MapPin,
+  CheckCircle,
+  Leaf,
+  Package,
+  Mail,
+  Globe,
+  Star,
+  Phone,
+  ChevronLeft,
+  ExternalLink,
+  Facebook,
+  Send,
+  Handshake,
+  TrendingUp,
+  ArrowLeft,
+  Bookmark,
 } from "lucide-react";
 import type { Supplier, RequestPurpose } from "@/types";
 import Button from "@/components/ui/Button";
 import { BusinessMedia } from "@/components/ui/BusinessMedia";
-import { ecoScoreBg, ecoScoreLabel, cn } from "@/lib/utils";
+import { ecoScoreBg, ecoScoreLabel, cn, normalizeHttpUrl, linkDisplayHost } from "@/lib/utils";
 import RequestForm from "@/components/request/RequestForm";
 import { supabase } from "@/lib/supabase";
 import { getSavedBusinesses, toggleSaveBusiness } from "@/lib/api";
 import { notifyBusinessDataChanged } from "@/lib/data-events";
-import { Bookmark } from "lucide-react";
 
 interface Review {
   id: string;
@@ -123,13 +136,20 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
     setReviewSubmitting(false);
   };
 
-  const ecoNarrative = (supplier as unknown as Record<string, unknown>).ecoDescription as string | undefined;
+  const ecoNarrative = supplier.ecoDescription?.trim();
   const ecoScore = supplier.ecoScore.overall;
+
+  const phoneDigits = supplier.contactPhone?.replace(/[^\d+]/g, "") ?? "";
+  const telHref = phoneDigits ? `tel:${phoneDigits}` : "";
+  const websiteHref = supplier.website ? normalizeHttpUrl(supplier.website) : "";
+  const facebookHref = supplier.facebookUrl ? normalizeHttpUrl(supplier.facebookUrl) : "";
+  const telegramHref = supplier.telegramUrl ? normalizeHttpUrl(supplier.telegramUrl) : "";
+  const collabTypes = supplier.collaboration.lookingFor ?? [];
 
   if (showRequestForm) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
-        <button onClick={() => setShowRequestForm(false)}
+        <button type="button" onClick={() => setShowRequestForm(false)}
           className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to {supplier.name}
         </button>
@@ -171,7 +191,7 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
             {supplier.gallery.length > 1 && (
               <div className="flex gap-2">
                 {supplier.gallery.map((img, i) => (
-                  <button key={i} onClick={() => setActiveImage(i)}
+                  <button key={i} type="button" onClick={() => setActiveImage(i)}
                     className={`w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${activeImage === i ? "border-brand-500" : "border-transparent opacity-60 hover:opacity-100"}`}>
                     <BusinessMedia fit="avatar" src={img} alt="" name={supplier.name} className="h-full w-full" avatarTextClassName="text-sm" />
                   </button>
@@ -202,7 +222,7 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
                   </span>
                 )}
                 <span className="text-xs text-ink-faint bg-surface-100 px-2 py-0.5 rounded-full">{supplier.tier}</span>
-                <button
+                <button type="button"
   onClick={async () => {
     if (!isLoggedIn) {
       router.push("/auth/login");
@@ -258,6 +278,156 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
             <p className="text-sm text-ink-muted leading-relaxed">{supplier.description}</p>
           </div>
 
+          {/* Industry, size & registration */}
+          <div className="rounded-2xl border border-surface-200 bg-gradient-to-br from-surface-50/90 to-white p-5 sm:p-6">
+            <h2 className="font-semibold text-ink mb-4">Industry & snapshot</h2>
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold text-ink-faint uppercase tracking-wide mb-2">Industry</p>
+                <span className="inline-flex px-3 py-1.5 rounded-full bg-brand-50 border border-brand-100 text-sm font-medium text-brand-800">
+                  {supplier.category}
+                </span>
+                {(supplier.subCategories?.length ?? 0) > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-ink-faint uppercase tracking-wide mb-2">Focus areas</p>
+                    <div className="flex flex-wrap gap-2">
+                      {supplier.subCategories!.map((s) => (
+                        <span key={s} className="px-2.5 py-1 bg-white border border-surface-200 rounded-lg text-xs text-ink-muted">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <dl className="space-y-2 text-sm text-ink-muted">
+                <div className="flex justify-between gap-4 py-2 border-b border-surface-100">
+                  <dt className="text-ink-faint">Company tier</dt>
+                  <dd className="font-medium text-ink">{supplier.tier}</dd>
+                </div>
+                {supplier.foundedYear != null ? (
+                  <div className="flex justify-between gap-4 py-2 border-b border-surface-100">
+                    <dt className="text-ink-faint">Founded</dt>
+                    <dd className="font-medium text-ink">{supplier.foundedYear}</dd>
+                  </div>
+                ) : null}
+                {supplier.location ? (
+                  <div className="flex justify-between gap-4 py-2 border-b border-surface-100">
+                    <dt className="text-ink-faint">Primary location</dt>
+                    <dd className="font-medium text-ink text-right">{supplier.locationDetail || supplier.location}</dd>
+                  </div>
+                ) : null}
+                {supplier.taxId ? (
+                  <div className="flex justify-between gap-4 py-2 border-b border-surface-100">
+                    <dt className="text-ink-faint">Tax ID</dt>
+                    <dd className="font-mono text-xs text-ink break-all">{supplier.taxId}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+          </div>
+
+          {/* Links & contact — surfaced prominently (API already returns website/facebook/telegram when set) */}
+          {Boolean(supplier.contactEmail?.trim())
+            || Boolean(supplier.contactPhone?.trim())
+            || supplier.website
+            || supplier.facebookUrl
+            || supplier.telegramUrl ? (
+            <div className="rounded-2xl border border-surface-200 bg-white p-5 sm:p-6 shadow-soft space-y-4">
+              <h2 className="font-semibold text-ink">Website & social</h2>
+              <p className="text-xs text-ink-muted -mt-1">
+                Reach out directly — all links open in your browser unless noted.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {supplier.contactEmail ? (
+                  <a
+                    href={`mailto:${supplier.contactEmail}?subject=${encodeURIComponent(`Enquiry from CBH — ${supplier.name}`)}&body=${encodeURIComponent(`Hi ${supplier.name},\n\nI found your listing on CBH and would like to get in touch.\n\n`)}`}
+                    className="group flex gap-3 rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <Mail className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-ink-faint uppercase tracking-wide">Email</span>
+                      <span className="text-sm text-ink font-medium break-all group-hover:text-brand-700">{supplier.contactEmail}</span>
+                    </span>
+                  </a>
+                ) : null}
+                {supplier.contactPhone?.trim() && telHref ? (
+                  <a
+                    href={telHref}
+                    className="group flex gap-3 rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <Phone className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-ink-faint uppercase tracking-wide">Phone</span>
+                      <span className="text-sm text-ink font-medium">{supplier.contactPhone}</span>
+                    </span>
+                  </a>
+                ) : null}
+                {supplier.website ? (
+                  <a
+                    href={websiteHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex gap-3 rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-100 text-brand-600">
+                      <Globe className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-ink-faint uppercase tracking-wide">Website</span>
+                      <span className="text-sm text-brand-600 font-medium break-all group-hover:underline">
+                        {linkDisplayHost(supplier.website)}
+                      </span>
+                      <ExternalLink className="inline-block w-3 h-3 ml-1 opacity-50" aria-hidden />
+                    </span>
+                  </a>
+                ) : null}
+                {supplier.facebookUrl ? (
+                  <a
+                    href={facebookHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex gap-3 rounded-xl border border-surface-200 p-4 hover:border-blue-100 hover:bg-blue-50/50 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                      <Facebook className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-ink-faint uppercase tracking-wide">Facebook</span>
+                      <span className="text-sm text-blue-700 font-medium break-all group-hover:underline">
+                        {linkDisplayHost(supplier.facebookUrl)}
+                      </span>
+                      <ExternalLink className="inline-block w-3 h-3 ml-1 opacity-50" aria-hidden />
+                    </span>
+                  </a>
+                ) : null}
+                {supplier.telegramUrl ? (
+                  <a
+                    href={telegramHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex gap-3 rounded-xl border border-surface-200 p-4 hover:border-sky-100 hover:bg-sky-50/60 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+                      <Send className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-ink-faint uppercase tracking-wide">Telegram</span>
+                      <span className="text-sm text-sky-800 font-medium break-all group-hover:underline">
+                        {telegramHref ? linkDisplayHost(telegramHref) : supplier.telegramUrl}
+                      </span>
+                      <ExternalLink className="inline-block w-3 h-3 ml-1 opacity-50" aria-hidden />
+                    </span>
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {/* Services */}
           <div>
             <h2 className="font-semibold text-ink mb-3">Services & Products</h2>
@@ -297,7 +467,12 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
                     <Handshake className="w-4 h-4 text-blue-600" />
                     <span className="font-semibold text-blue-800 text-sm">Open for Collaboration</span>
                   </div>
-                  <p className="text-xs text-blue-700">{supplier.collaboration.description || `${supplier.name} is looking for ${supplier.collaboration.lookingFor.join(", ")} partners.`}</p>
+                  <p className="text-xs text-blue-700">
+                    {supplier.collaboration.description
+                      ?? (collabTypes.length > 0
+                        ? `${supplier.name} is seeking ${collabTypes.join(", ")} partners.`
+                        : `${supplier.name} is open to collaboration.`)}
+                  </p>
                 </div>
               )}
               {supplier.investment.enabled && (
@@ -324,7 +499,7 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
                 <p className="text-sm font-semibold text-ink mb-3">Leave a Review</p>
                 <div className="flex gap-1 mb-3">
                   {[1,2,3,4,5].map((star) => (
-                    <button key={star} onClick={() => setReviewForm(p => ({ ...p, rating: star }))}>
+                    <button key={star} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: star }))}>
                       <Star className={cn("w-7 h-7 transition-colors", star <= reviewForm.rating ? "fill-yellow-400 text-yellow-400" : "text-surface-300")} />
                     </button>
                   ))}
@@ -402,34 +577,38 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
             )}
           </div>
 
-          {/* Contact — email opens pre-composed mailto */}
           <div className="bg-white rounded-2xl border border-surface-200 p-5 space-y-3">
-            <h3 className="font-semibold text-ink text-sm">Contact</h3>
-            {/* mailto link pre-fills the To field and includes a helpful subject */}
+            <h3 className="font-semibold text-ink text-sm">Quick contact</h3>
             <a
-              href={`mailto:${supplier.contactEmail}?subject=Enquiry from CBH — ${encodeURIComponent(supplier.name)}&body=Hi ${encodeURIComponent(supplier.name)},%0A%0AI found your listing on CBH and would like to get in touch.%0A%0A`}
-              className="flex items-center gap-2 text-sm text-ink-muted hover:text-brand-600 transition-colors"
+              href={`mailto:${supplier.contactEmail}?subject=Enquiry from CBH — ${encodeURIComponent(supplier.name)}&body=${encodeURIComponent(`Hi ${supplier.name},\n\nI found your listing on CBH and would like to get in touch.\n\n`)}`}
+              className="flex items-center gap-2 text-sm text-ink-muted hover:text-brand-600 transition-colors break-all"
             >
               <Mail className="w-4 h-4 shrink-0 text-brand-500" /> {supplier.contactEmail}
             </a>
-            {supplier.telegramUrl && (
-              <a href={supplier.telegramUrl} target="_blank" rel="noopener noreferrer"
+            {supplier.contactPhone?.trim() && telHref ? (
+              <a href={telHref}
                 className="flex items-center gap-2 text-sm text-ink-muted hover:text-brand-600 transition-colors">
-                <Send className="w-4 h-4 shrink-0 text-brand-500" /> Chat on Telegram
+                <Phone className="w-4 h-4 shrink-0 text-brand-500" /> {supplier.contactPhone}
               </a>
-            )}
-            {supplier.website && (
-              <a href={supplier.website} target="_blank" rel="noopener noreferrer"
+            ) : null}
+            {supplier.telegramUrl ? (
+              <a href={telegramHref} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-ink-muted hover:text-brand-600 transition-colors">
+                <Send className="w-4 h-4 shrink-0 text-brand-500" /> Telegram
+              </a>
+            ) : null}
+            {supplier.website ? (
+              <a href={websiteHref} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm text-brand-600 hover:underline">
-                <Globe className="w-4 h-4 shrink-0" /> Website
+                <Globe className="w-4 h-4 shrink-0" /> {linkDisplayHost(supplier.website)}
               </a>
-            )}
-            {supplier.facebookUrl && (
-              <a href={supplier.facebookUrl} target="_blank" rel="noopener noreferrer"
+            ) : null}
+            {supplier.facebookUrl ? (
+              <a href={facebookHref} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm text-ink-muted hover:text-brand-600 transition-colors">
                 <Facebook className="w-4 h-4 shrink-0" /> Facebook
               </a>
-            )}
+            ) : null}
           </div>
 
           {/* Details */}
@@ -445,11 +624,11 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
               <div className="text-brand-600 font-medium">{supplier.discountPercent}% discount available</div>
             )}
             {supplier.foundedYear && <div className="text-ink-faint">Est. {supplier.foundedYear}</div>}
-           {(supplier as any).taxId && (
-  <div className="text-ink-faint text-xs">
-    Tax ID: {(supplier as any).taxId}
-  </div>
-)}
+            {supplier.taxId ? (
+              <div className="text-ink-faint text-xs">
+                Tax ID: {supplier.taxId}
+              </div>
+            ) : null}
             {supplier.tags.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {supplier.tags.map((tag) => (

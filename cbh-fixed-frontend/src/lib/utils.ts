@@ -61,3 +61,23 @@ export function ecoLevel(score: number): "Basic" | "Medium" | "High" {
   if (score >= 41) return "Medium";
   return "Basic";
 }
+
+/** Backend often stores URLs without protocol; browsers need http(s): for navigation. */
+export function normalizeHttpUrl(raw: string | undefined | null): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return "";
+  if (/^mailto:|^tel:|^sms:/i.test(s)) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+
+/** Prefer showing a readable host/path instead of raw string */
+export function linkDisplayHost(url: string): string {
+  try {
+    const u = normalizeHttpUrl(url);
+    if (!u) return url;
+    return new URL(u).host.replace(/^www\./i, "") || url;
+  } catch {
+    return url;
+  }
+}

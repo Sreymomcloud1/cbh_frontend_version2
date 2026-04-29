@@ -52,6 +52,7 @@ export const mockSuppliers: Supplier[] = [
     description:
       "EcoPack designs and manufactures biodegradable and compostable packaging solutions. From food containers to shipping boxes, every product is certified plastic-free.",
     category: "Packaging",
+    subCategories: ["Manufacturing", "B2B wholesale"],
     tier: "Startup",
     location: "Siem Reap",
     locationDetail: "Svay Dangkum, Siem Reap",
@@ -66,6 +67,8 @@ export const mockSuppliers: Supplier[] = [
       level: "High",
       breakdown: { packaging: 20, sourcing: 18, energy: 16, waste: 18, delivery: 13, practices: 10 },
     },
+    ecoDescription:
+      "EcoPack uses only certified compostable fibers and runs a low-waste cutting line. Electricity is sourced partly from on-site solar; shipping cartons are minimized through right-sized packaging design.",
     discountPercent: 8,
     bulkSupport: true,
     bulkCapacity: "10,000+ units/week",
@@ -74,6 +77,7 @@ export const mockSuppliers: Supplier[] = [
     services: ["Custom Boxes", "Food Containers", "Bags & Wraps", "Label Printing"],
     contactEmail: "orders@ecopack.kh",
     contactPhone: "+855 23 456 789",
+    website: "https://ecopack.kh",
     facebookUrl: "https://facebook.com/ecopackkh",
     rating: 4.6,
     reviewCount: 87,

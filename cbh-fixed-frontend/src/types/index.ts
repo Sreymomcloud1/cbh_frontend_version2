@@ -110,6 +110,11 @@ export interface Supplier {
 
   collaboration: CollaborationSettings;
   investment: InvestmentSettings;
+
+  /** Backend `eco_description` — bespoke eco narrative for listings */
+  ecoDescription?: string | null;
+  /** Optional business identifier for display on profile */
+  taxId?: string | null;
 }
 
 // ─── Messages & Conversations ─────────────────────────────────────────────────
