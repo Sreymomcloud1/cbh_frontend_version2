@@ -73,6 +73,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         window.location.href = "/auth/login";
       }
     }
+    if (res.status === 429) {
+      await new Promise(r => setTimeout(r, 2000));
+      return request<T>(path, options);
+    }
+
     throw new Error(json?.error?.message ?? `Request failed: ${res.status}`);
   }
 
@@ -397,12 +402,12 @@ export async function getUnreadCount(): Promise<number> {
 }
 
 // ─── Upload (Supabase Storage) ────────────────────────────────────────────────
-
+ 
 /**
  * Upload an image file. Returns the public URL.
  * endpoint: "avatar" | "business-logo" | "business-gallery"
  */
-async function uploadFile(
+async function _uploadFileInternal(
   endpoint: "avatar" | "business-logo" | "business-gallery",
   file: File,
   extraFields?: Record<string, string>
@@ -410,38 +415,44 @@ async function uploadFile(
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
   if (!token) throw new Error("Not authenticated");
-
+ 
   const form = new FormData();
   form.append("file", file);
   if (extraFields) {
     Object.entries(extraFields).forEach(([k, v]) => form.append(k, v));
   }
-
+ 
   const res = await fetchWithTimeout(`${BASE_URL}/upload/${endpoint}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
-
+ 
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error?.message ?? `Upload failed: ${res.status}`);
   return json.data;
 }
-
+ 
 export async function uploadAvatar(file: File): Promise<string> {
-  const result = await uploadFile("avatar", file);
+  const result = await _uploadFileInternal("avatar", file);
   return result.url;
 }
-
+ 
 export async function uploadBusinessLogo(file: File, businessId: string): Promise<string> {
-  const result = await uploadFile("business-logo", file, { business_id: businessId });
+  const result = await _uploadFileInternal("business-logo", file, { business_id: businessId });
   return result.url;
 }
-
+ 
 export async function uploadBusinessGalleryImage(file: File, businessId: string): Promise<{ url: string; gallery_urls: string[] }> {
-  const result = await uploadFile("business-gallery", file, { business_id: businessId });
+  const result = await _uploadFileInternal("business-gallery", file, { business_id: businessId });
   return result as { url: string; gallery_urls: string[] };
 }
+ 
+/** @deprecated Use uploadBusinessLogo or uploadBusinessGalleryImage instead. */
+export async function uploadFile(file: File, businessId: string): Promise<string> {
+  return uploadBusinessLogo(file, businessId);
+}
+ 
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 

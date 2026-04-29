@@ -6,14 +6,18 @@ import {
   BarChart3, CheckCircle, XCircle, Clock, RefreshCw,
   ChevronDown, ChevronUp, AlertCircle, Loader2, Eye,
   RotateCcw, X, Mail, Phone, Globe, Facebook, Send,
-  FileText, Star, Leaf, MapPin,
+  FileText, Star, Leaf, MapPin, UserCog, Image as ImageIcon,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
-//import { Users, Clock } from "lucide-react";
+import {
+  uploadBusinessLogo,
+  uploadBusinessGalleryImage,
+  updateBusiness,
+} from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -59,6 +63,8 @@ interface BusinessFull {
   review_count: number;
   open_for_collaboration: boolean;
   open_for_investment: boolean;
+  created_by_admin?: boolean;
+  admin_creator_email?: string | null;
   owner: { id: string; name: string; email: string; phone?: string; created_at: string } | null;
   audit_log?: AuditEntry[];
 }
@@ -82,11 +88,12 @@ interface Stats {
   pending_verification: number;
 }
 
-type AdminTab = "overview" | "businesses" | "users";
+type AdminTab = "overview" | "businesses" | "users" | "my-registrations";
 
 // ── API helper ───────────────────────────────────────────────────────────────
 
-async function adminFetch(path: string, options: RequestInit = {}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function adminFetch(path: string, options: RequestInit = {}): Promise<any> {
   const token = await getAccessToken();
   const res = await fetch(`${API}${path}`, {
     ...options,
@@ -97,7 +104,26 @@ async function adminFetch(path: string, options: RequestInit = {}) {
       ...(options.headers ?? {}),
     },
   });
-  return res.json();
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    if (!res.ok) {
+      return { success: false, error: { message: `Request failed (${res.status})` } };
+    }
+    return { success: false, error: { message: "Invalid server response." } };
+  }
+
+  if (!res.ok) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maybeError = (json as any)?.error?.message;
+    return {
+      success: false,
+      error: { message: maybeError ?? `Request failed (${res.status})` },
+    };
+  }
+
+  return json;
 }
 
 // ── Small UI pieces ───────────────────────────────────────────────────────────
@@ -161,6 +187,11 @@ function BusinessModal({
             <div className="flex items-center gap-2 mt-1">
               <StatusBadge status={biz.verification_status} />
               <span className="text-xs text-stone-400">{biz.category} · {biz.tier}</span>
+              {biz.created_by_admin && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full border font-semibold bg-purple-950 text-purple-400 border-purple-800">
+                  Admin Registered
+                </span>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-stone-400 hover:text-white transition-colors">
@@ -214,6 +245,12 @@ function BusinessModal({
                   <InfoRow icon={Clock} label="Joined" value={new Date(biz.owner.created_at).toLocaleDateString()} />
                 </>
               ) : <p className="text-stone-500 text-xs">No owner data</p>}
+              {biz.created_by_admin && biz.admin_creator_email && (
+                <div className="mt-2 pt-2 border-t border-stone-800">
+                  <p className="text-xs font-semibold text-purple-400 mb-1">Registered by Admin</p>
+                  <p className="text-xs text-stone-400">{biz.admin_creator_email}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -358,6 +395,125 @@ function InfoRow({ icon: Icon, label, value, link }: { icon: React.ElementType; 
   );
 }
 
+// ── File Upload Preview Component ─────────────────────────────────────────────
+
+function FileUploadField({
+  label,
+  multiple,
+  onChange,
+  previews,
+}: {
+  label: string;
+  multiple?: boolean;
+  onChange: (files: File[]) => void;
+  previews: string[];
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) onChange(files);
+  };
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-stone-400 mb-1">{label}</label>
+      <label className="flex flex-col items-center justify-center gap-2 w-full rounded-lg border border-dashed border-stone-600 bg-stone-800 px-3 py-4 cursor-pointer hover:border-brand-500 transition-colors">
+        <ImageIcon size={18} className="text-stone-500" />
+        <span className="text-xs text-stone-500">
+          {multiple ? "Click to select images" : "Click to select image"}
+        </span>
+        <input
+          type="file"
+          accept="image/*"
+          multiple={multiple}
+          className="hidden"
+          onChange={handleChange}
+        />
+      </label>
+      {previews.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {previews.map((src, i) => (
+            <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-stone-700 bg-stone-800">
+              <img src={src} alt="" className="w-full h-full object-cover" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Add Business Form State ───────────────────────────────────────────────────
+
+interface AddBizFormState {
+  name: string;
+  tagline: string;
+  description: string;
+  category: string;
+  tier: string;
+  sub_categories: string;
+  location_city: string;
+  location_detail: string;
+  map_url: string;
+  logo_file: File | null;
+  gallery_files: File[];
+  eco_description: string;
+  discount_percent: string;
+  bulk_support: boolean;
+  bulk_capacity: string;
+  tags: string;
+  services: string;
+  contact_email: string;
+  contact_phone: string;
+  tax_id: string;
+  facebook_url: string;
+  telegram_url: string;
+  website_url: string;
+  open_for_collaboration: boolean;
+  collaboration_types: string;
+  collaboration_description: string;
+  open_for_investment: boolean;
+  investment_amount: string;
+  investment_description: string;
+  founded_year: string;
+  notify_by_email: boolean;
+  notify_by_phone: boolean;
+}
+
+const EMPTY_ADD_BIZ_FORM: AddBizFormState = {
+  name: "",
+  tagline: "",
+  description: "",
+  category: "",
+  tier: "SME",
+  sub_categories: "",
+  location_city: "",
+  location_detail: "",
+  map_url: "",
+  logo_file: null,
+  gallery_files: [],
+  eco_description: "",
+  discount_percent: "",
+  bulk_support: false,
+  bulk_capacity: "",
+  tags: "",
+  services: "",
+  contact_email: "",
+  contact_phone: "",
+  tax_id: "",
+  facebook_url: "",
+  telegram_url: "",
+  website_url: "",
+  open_for_collaboration: false,
+  collaboration_types: "",
+  collaboration_description: "",
+  open_for_investment: false,
+  investment_amount: "",
+  investment_description: "",
+  founded_year: "",
+  notify_by_email: true,
+  notify_by_phone: false,
+};
+
 // ── Main admin page ───────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -375,46 +531,14 @@ export default function AdminPage() {
   const [expandedId,    setExpandedId]    = useState<string | null>(null);
   const [selectedBiz,   setSelectedBiz]   = useState<BusinessFull | null>(null);
   const [toast,         setToast]         = useState<{ msg: string; ok: boolean } | null>(null);
+  const [showAddBiz,    setShowAddBiz]    = useState(false);
+  const [addBizForm,    setAddBizForm]    = useState<AddBizFormState>(EMPTY_ADD_BIZ_FORM);
+  const [addBizSaving,  setAddBizSaving]  = useState(false);
+  const [addBizError,   setAddBizError]   = useState<string | null>(null);
 
-  // 🔽 ADD HERE (below existing useState)
-  const [showAddBiz, setShowAddBiz] = useState(false);
-
-  const [addBizForm, setAddBizForm] = useState({
-    name: "",
-    tagline: "",
-    description: "",
-    category: "",
-    tier: "SME",
-    sub_categories: "",
-    location_city: "",
-    location_detail: "",
-    map_url: "",
-    logo_url: "",
-    gallery_urls: "",
-    eco_description: "",
-    discount_percent: "",
-    bulk_support: false,
-    bulk_capacity: "",
-    tags: "",
-    services: "",
-    contact_email: "",
-    contact_phone: "",
-    tax_id: "",
-    facebook_url: "",
-    telegram_url: "",
-    website_url: "",
-    open_for_collaboration: false,
-    collaboration_types: "",
-    collaboration_description: "",
-    open_for_investment: false,
-    investment_amount: "",
-    investment_description: "",
-    founded_year: "",
-    notify_by_email: true,
-    notify_by_phone: false,
-  });
-
-  const [addBizSaving, setAddBizSaving] = useState(false);
+  // File preview URLs
+  const [logoPreview,    setLogoPreview]    = useState<string[]>([]);
+  const [galleryPreview, setGalleryPreview] = useState<string[]>([]);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -422,11 +546,7 @@ export default function AdminPage() {
   };
 
   const toArray = (value: string) =>
-    value
-      .split(",")
-      .map(v => v.trim())
-      .filter(Boolean);
-
+    value.split(",").map(v => v.trim()).filter(Boolean);
 
   // Guard: admin only
   useEffect(() => {
@@ -501,73 +621,180 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddBusiness = async () => {
-  if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email || !addBizForm.contact_phone || !addBizForm.location_city) {
-    showToast("Name, category, city, email and phone are required.", false); return;
-  }
-  if (!addBizForm.facebook_url.trim() && !addBizForm.telegram_url.trim()) {
-    showToast("Add at least one verification contact: Facebook URL or Telegram URL.", false); return;
-  }
-  setAddBizSaving(true);
-  const payload = {
-    name: addBizForm.name.trim(),
-    tagline: addBizForm.tagline.trim() || undefined,
-    description: addBizForm.description.trim() || undefined,
-    category: addBizForm.category,
-    tier: addBizForm.tier,
-    sub_categories: toArray(addBizForm.sub_categories),
-    location_city: addBizForm.location_city.trim(),
-    location_detail: addBizForm.location_detail.trim() || undefined,
-    map_url: addBizForm.map_url.trim() || undefined,
-    logo_url: addBizForm.logo_url.trim() || undefined,
-    gallery_urls: toArray(addBizForm.gallery_urls),
-    eco_description: addBizForm.eco_description.trim() || undefined,
-    discount_percent: addBizForm.discount_percent ? Number(addBizForm.discount_percent) : undefined,
-    bulk_support: addBizForm.bulk_support,
-    bulk_capacity: addBizForm.bulk_capacity.trim() || undefined,
-    tags: toArray(addBizForm.tags),
-    services: toArray(addBizForm.services),
-    contact_email: addBizForm.contact_email.trim(),
-    contact_phone: addBizForm.contact_phone.trim(),
-    tax_id: addBizForm.tax_id.trim() || undefined,
-    facebook_url: addBizForm.facebook_url.trim() || undefined,
-    telegram_url: addBizForm.telegram_url.trim() || undefined,
-    website_url: addBizForm.website_url.trim() || undefined,
-    open_for_collaboration: addBizForm.open_for_collaboration,
-    collaboration_types: toArray(addBizForm.collaboration_types),
-    collaboration_description: addBizForm.collaboration_description.trim() || undefined,
-    open_for_investment: addBizForm.open_for_investment,
-    investment_amount: addBizForm.investment_amount.trim() || undefined,
-    investment_description: addBizForm.investment_description.trim() || undefined,
-    founded_year: addBizForm.founded_year ? Number(addBizForm.founded_year) : undefined,
-    notify_by_email: addBizForm.notify_by_email,
-    notify_by_phone: addBizForm.notify_by_phone,
+  // ── Handle file selection ──────────────────────────────────────────────────
+
+  const handleLogoChange = (files: File[]) => {
+    const file = files[0];
+    setAddBizForm(p => ({ ...p, logo_file: file }));
+    const url = URL.createObjectURL(file);
+    setLogoPreview([url]);
   };
-  const res = await adminFetch("/admin/businesses/create", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  setAddBizSaving(false);
-  if (res.success) {
-    notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
-    setTab("businesses");
-    router.replace("/admin");
-    showToast("Business added and published ✓", true);
-    setShowAddBiz(false);
-    setAddBizForm({
-      name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
-      location_city: "", location_detail: "", map_url: "", logo_url: "", gallery_urls: "",
-      eco_description: "", discount_percent: "", bulk_support: false, bulk_capacity: "", tags: "", services: "",
-      contact_email: "", contact_phone: "", tax_id: "", facebook_url: "", telegram_url: "", website_url: "",
-      open_for_collaboration: false, collaboration_types: "", collaboration_description: "",
-      open_for_investment: false, investment_amount: "", investment_description: "", founded_year: "",
-      notify_by_email: true, notify_by_phone: false,
-    });
-    loadAll();
-  } else {
-    showToast(res.error?.message ?? "Failed to add business.", false);
-  }
-};
+
+  const handleGalleryChange = (files: File[]) => {
+    setAddBizForm(p => ({ ...p, gallery_files: files }));
+    const urls = files.map(f => URL.createObjectURL(f));
+    setGalleryPreview(urls);
+  };
+
+  // ── Add Business ──────────────────────────────────────────────────────────
+
+  const handleAddBusiness = async () => {
+    setAddBizError(null);
+
+    // Validation
+    if (!addBizForm.name.trim()) {
+      setAddBizError("Business name is required.");
+      return;
+    }
+    if (!addBizForm.category) {
+      setAddBizError("Category is required.");
+      return;
+    }
+    if (!addBizForm.contact_email.trim()) {
+      setAddBizError("Contact email is required.");
+      return;
+    }
+    if (!addBizForm.contact_phone.trim()) {
+      setAddBizError("Contact phone is required.");
+      return;
+    }
+    if (!addBizForm.location_city.trim()) {
+      setAddBizError("City is required.");
+      return;
+    }
+    if (!addBizForm.facebook_url.trim() && !addBizForm.telegram_url.trim()) {
+      setAddBizError("At least one verification contact is required: Facebook URL or Telegram URL.");
+      return;
+    }
+
+    setAddBizSaving(true);
+
+    try {
+      // Step 1: Create the business record
+      const payload = {
+        name: addBizForm.name.trim(),
+        tagline: addBizForm.tagline.trim() || undefined,
+        description: addBizForm.description.trim() || undefined,
+        category: addBizForm.category,
+        tier: addBizForm.tier,
+        sub_categories: toArray(addBizForm.sub_categories),
+        location_city: addBizForm.location_city.trim(),
+        location_detail: addBizForm.location_detail.trim() || undefined,
+        map_url: addBizForm.map_url.trim() || undefined,
+        eco_description: addBizForm.eco_description.trim() || undefined,
+        discount_percent: addBizForm.discount_percent ? Number(addBizForm.discount_percent) : undefined,
+        bulk_support: addBizForm.bulk_support,
+        bulk_capacity: addBizForm.bulk_capacity.trim() || undefined,
+        tags: toArray(addBizForm.tags),
+        services: toArray(addBizForm.services),
+        contact_email: addBizForm.contact_email.trim(),
+        contact_phone: addBizForm.contact_phone.trim(),
+        tax_id: addBizForm.tax_id.trim() || undefined,
+        facebook_url: addBizForm.facebook_url.trim() || undefined,
+        telegram_url: addBizForm.telegram_url.trim() || undefined,
+        website_url: addBizForm.website_url.trim() || undefined,
+        open_for_collaboration: addBizForm.open_for_collaboration,
+        collaboration_types: toArray(addBizForm.collaboration_types),
+        collaboration_description: addBizForm.collaboration_description.trim() || undefined,
+        open_for_investment: addBizForm.open_for_investment,
+        investment_amount: addBizForm.investment_amount.trim() || undefined,
+        investment_description: addBizForm.investment_description.trim() || undefined,
+        founded_year: addBizForm.founded_year ? Number(addBizForm.founded_year) : undefined,
+        notify_by_email: addBizForm.notify_by_email,
+        notify_by_phone: addBizForm.notify_by_phone,
+        // Admin tracking flag
+        created_by_admin: true,
+        admin_creator_email: adminEmail,
+      };
+
+      // Some deployments expose create on different paths.
+      // Try canonical admin route first, then known legacy fallback.
+      const createPaths = ["/admin/businesses", "/admin/businesses/create"];
+      let res: { success?: boolean; data?: { id?: string }; error?: { message?: string } } | null = null;
+
+      for (const path of createPaths) {
+        const attempt = await adminFetch(path, {
+          method: "POST",
+          body: JSON.stringify({
+            ...payload,
+            verification_status: "pending",
+            is_verified: false,
+            is_active: false,
+          }),
+        });
+        if (attempt?.success) {
+          res = attempt;
+          break;
+        }
+        res = attempt;
+      }
+
+      if (!res?.success) {
+        setAddBizError(res?.error?.message ?? "Failed to create business. Please try again.");
+        setAddBizSaving(false);
+        return;
+      }
+
+      const newId = res.data?.id;
+      if (!newId) {
+        setAddBizError("Business was created but no ID was returned by the server.");
+        setAddBizSaving(false);
+        return;
+      }
+
+      // Step 2: Upload logo if provided
+      if (addBizForm.logo_file) {
+        try {
+          const logoUrl = await uploadBusinessLogo(addBizForm.logo_file, newId);
+          await updateBusiness(newId, { logo_url: logoUrl } as Parameters<typeof updateBusiness>[1]);
+        } catch (uploadErr) {
+          console.error("Logo upload failed:", uploadErr);
+          // Non-fatal: business was created, just log warning
+          showToast("Business created, but logo upload failed. You can add it later.", false);
+        }
+      }
+
+      // Step 3: Upload gallery images if provided
+      if (addBizForm.gallery_files.length > 0) {
+        try {
+          const galleryUrls: string[] = [];
+          for (const file of addBizForm.gallery_files) {
+            const result = await uploadBusinessGalleryImage(file, newId);
+            // uploadBusinessGalleryImage returns { url, gallery_urls }
+            // Use the final gallery_urls from last call, or accumulate manually
+            galleryUrls.push(result.url);
+          }
+          // gallery_urls is managed server-side by the upload endpoint,
+          // but we patch to be safe if the endpoint doesn't auto-update
+          if (galleryUrls.length > 0) {
+            await updateBusiness(newId, { gallery_urls: galleryUrls } as Parameters<typeof updateBusiness>[1]);
+          }
+        } catch (uploadErr) {
+          console.error("Gallery upload failed:", uploadErr);
+          showToast("Business created, but gallery upload failed. You can add images later.", false);
+        }
+      }
+
+      // Step 4: Notify and clean up
+      notifyBusinessDataChanged({ id: newId, action: "created" });
+      showToast(`"${addBizForm.name}" has been added successfully ✓`, true);
+
+      setShowAddBiz(false);
+      setAddBizForm(EMPTY_ADD_BIZ_FORM);
+      setLogoPreview([]);
+      setGalleryPreview([]);
+      setAddBizError(null);
+      setTab("businesses");
+      router.replace("/admin");
+      loadAll();
+
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An unexpected error occurred.";
+      setAddBizError(msg);
+    } finally {
+      setAddBizSaving(false);
+    }
+  };
 
   const updateUserRole = async (userId: string, role: string) => {
     setActionId(userId);
@@ -588,19 +815,25 @@ export default function AdminPage() {
     await logoutAndRefresh("/");
   };
 
-  const pendingBiz   = businesses.filter(b => b.verification_status === "pending");
-  const filteredBiz  = businesses;
+  const pendingBiz    = businesses.filter(b => b.verification_status === "pending");
+  const filteredBiz   = businesses;
+  const adminCreated  = businesses.filter(b =>
+    b.created_by_admin &&
+    !!b.admin_creator_email &&
+    !!adminEmail &&
+    b.admin_creator_email.toLowerCase() === adminEmail.toLowerCase()
+  );
   const filteredUsers = users.filter(u =>
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
   );
 
   const navItems: { id: AdminTab; label: string; icon: React.ElementType; badge?: number }[] = [
-    { id: "overview",   label: "Overview",   icon: BarChart3   },
-    { id: "businesses", label: "Businesses", icon: Building2,  badge: stats?.pending_verification },
-    { id: "users",      label: "Users",      icon: Users },
+    { id: "overview",          label: "Overview",          icon: BarChart3   },
+    { id: "businesses",        label: "Businesses",        icon: Building2,  badge: stats?.pending_verification },
+    { id: "users",             label: "Users",             icon: Users },
+    { id: "my-registrations",  label: "My Registrations",  icon: UserCog,    badge: adminCreated.length || undefined },
   ];
 
- 
   return (
     <div className="flex min-h-screen bg-stone-950 text-white">
 
@@ -646,54 +879,49 @@ export default function AdminPage() {
       <main className="flex-1 overflow-y-auto">
         {/* Mobile header */}
         <div className="lg:hidden border-b border-stone-800 bg-stone-900 px-4 py-3 flex items-center justify-between">
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto">
             {navItems.map(item => (
               <button key={item.id} onClick={() => setTab(item.id)}
-                className={cn("px-3 py-1.5 rounded-xl text-xs font-medium transition-colors relative",
+                className={cn("px-3 py-1.5 rounded-xl text-xs font-medium transition-colors relative shrink-0",
                   tab === item.id ? "bg-brand-600 text-white" : "text-stone-400")}>
                 {item.label}
                 {item.badge ? <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] flex items-center justify-center">{item.badge}</span> : null}
               </button>
             ))}
           </div>
-          <button onClick={handleLogout} className="text-stone-400 hover:text-red-400"><LogOut size={16} /></button>
+          <button onClick={handleLogout} className="text-stone-400 hover:text-red-400 ml-2 shrink-0"><LogOut size={16} /></button>
         </div>
 
         <div className="p-5 lg:p-8 max-w-7xl mx-auto">
 
           {/* Header row */}
           <div className="flex items-center justify-between mb-6">
-  <h1 className="text-xl font-bold">
-    {tab === "overview"   && "Platform Overview"}
-    {tab === "businesses" && "Business Verification"}
-    {tab === "users"      && "User Management"}
-  </h1>
+            <h1 className="text-xl font-bold">
+              {tab === "overview"          && "Platform Overview"}
+              {tab === "businesses"        && "Business Verification"}
+              {tab === "users"             && "User Management"}
+              {tab === "my-registrations"  && "My Registered Businesses"}
+            </h1>
 
-  {/* RIGHT SIDE ACTIONS */}
-  <div className="flex items-center gap-2">
-    
-    {/* ✅ Add Business button (ONLY for businesses tab) */}
-    {tab === "businesses" && (
-      <button
-        onClick={() => setShowAddBiz(true)}
-        className="flex items-center gap-1.5 text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors"
-      >
-        + Add Business
-      </button>
-    )}
-
-    {/* Existing Refresh button */}
-    <button
-      onClick={loadAll}
-      disabled={loading}
-      className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-white transition-colors disabled:opacity-50"
-    >
-      <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-      Refresh
-    </button>
-
-  </div>
-</div>
+            <div className="flex items-center gap-2">
+              {tab === "businesses" && (
+                <button
+                  onClick={() => { setShowAddBiz(true); setAddBizError(null); }}
+                  className="flex items-center gap-1.5 text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  + Add Business
+                </button>
+              )}
+              <button
+                onClick={loadAll}
+                disabled={loading}
+                className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+                Refresh
+              </button>
+            </div>
+          </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-32">
@@ -705,14 +933,13 @@ export default function AdminPage() {
               {tab === "overview" && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                    <StatCard icon={Users}     label="Total users"           value={stats?.total_users ?? 0}          color="bg-blue-500/20 text-blue-400" />
-                    <StatCard icon={Building2} label="Businesses"            value={stats?.total_businesses ?? 0}     color="bg-brand-500/20 text-brand-400" />
-                    <StatCard icon={FileText}  label="Requests"              value={stats?.total_requests ?? 0}       color="bg-purple-500/20 text-purple-400" />
-                    <StatCard icon={Clock}     label="Awaiting verification" value={stats?.pending_verification ?? 0} color="bg-amber-500/20 text-amber-400" urgent />
-                    <StatCard icon={CheckCircle} label="Messages"            value={stats?.total_messages ?? 0}       color="bg-green-500/20 text-green-400" />
+                    <StatCard icon={Users}       label="Total users"           value={stats?.total_users ?? 0}          color="bg-blue-500/20 text-blue-400" />
+                    <StatCard icon={Building2}   label="Businesses"            value={stats?.total_businesses ?? 0}     color="bg-brand-500/20 text-brand-400" />
+                    <StatCard icon={FileText}    label="Requests"              value={stats?.total_requests ?? 0}       color="bg-purple-500/20 text-purple-400" />
+                    <StatCard icon={Clock}       label="Awaiting verification" value={stats?.pending_verification ?? 0} color="bg-amber-500/20 text-amber-400" urgent />
+                    <StatCard icon={CheckCircle} label="Messages"              value={stats?.total_messages ?? 0}       color="bg-green-500/20 text-green-400" />
                   </div>
 
-                  {/* Pending verification — urgent list */}
                   {pendingBiz.length > 0 && (
                     <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-5">
                       <div className="flex items-center gap-2 mb-4">
@@ -744,7 +971,6 @@ export default function AdminPage() {
                     </div>
                   )}
 
-                  {/* Recent businesses table */}
                   <div className="rounded-2xl border border-stone-700 bg-stone-900 overflow-hidden">
                     <div className="px-5 py-4 border-b border-stone-800 flex items-center justify-between">
                       <h2 className="font-semibold text-sm">Recent Registrations</h2>
@@ -754,7 +980,12 @@ export default function AdminPage() {
                       {businesses.slice(0, 5).map(b => (
                         <div key={b.id} className="flex items-center justify-between px-5 py-3">
                           <div>
-                            <p className="text-sm font-medium text-white">{b.name}</p>
+                            <p className="text-sm font-medium text-white flex items-center gap-2">
+                              {b.name}
+                              {b.created_by_admin && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-950 text-purple-400 border border-purple-800">admin</span>
+                              )}
+                            </p>
                             <p className="text-xs text-stone-400">{b.category} · {b.location_city}</p>
                           </div>
                           <StatusBadge status={b.verification_status} />
@@ -808,7 +1039,12 @@ export default function AdminPage() {
                                 }
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-white truncate">{b.name}</p>
+                                <p className="text-sm font-medium text-white truncate flex items-center gap-1">
+                                  {b.name}
+                                  {b.created_by_admin && (
+                                    <span title="Registered by admin" className="text-[9px] px-1 py-0.5 rounded bg-purple-950 text-purple-400 border border-purple-800">admin</span>
+                                  )}
+                                </p>
                                 <p className="text-xs text-stone-500 truncate">{b.location_city}</p>
                               </div>
                             </div>
@@ -845,13 +1081,18 @@ export default function AdminPage() {
                             </div>
                           </div>
 
-                          {/* Expanded quick info */}
                           {expandedId === b.id && (
                             <div className="px-5 pb-4 bg-stone-950/50 border-t border-stone-800 grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 text-xs">
                               <div><p className="text-stone-500 mb-0.5">Email</p><p className="text-white">{b.contact_email}</p></div>
                               <div><p className="text-stone-500 mb-0.5">Phone</p><p className="text-white">{b.contact_phone || "—"}</p></div>
                               <div><p className="text-stone-500 mb-0.5">Owner</p><p className="text-white truncate">{b.owner?.email ?? "—"}</p></div>
                               <div><p className="text-stone-500 mb-0.5">Eco Score</p><p className="text-white">{b.eco_score_overall}/100</p></div>
+                              {b.created_by_admin && (
+                                <div className="col-span-4">
+                                  <p className="text-stone-500 mb-0.5">Registered by admin</p>
+                                  <p className="text-purple-400">{b.admin_creator_email ?? adminEmail}</p>
+                                </div>
+                              )}
                               {b.rejection_reason && (
                                 <div className="col-span-4">
                                   <p className="text-stone-500 mb-0.5">Reason</p>
@@ -922,6 +1163,51 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
+
+              {/* ── MY REGISTRATIONS ── */}
+              {tab === "my-registrations" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-stone-400">
+                    Businesses you personally registered via admin assistance. Total: <span className="text-white font-semibold">{adminCreated.length}</span>
+                  </p>
+
+                  {adminCreated.length === 0 ? (
+                    <div className="rounded-2xl border border-stone-700 bg-stone-900 px-5 py-16 text-center">
+                      <UserCog size={32} className="text-stone-600 mx-auto mb-3" />
+                      <p className="text-stone-500 text-sm">You haven't registered any businesses yet.</p>
+                      <p className="text-stone-600 text-xs mt-1">Use the "+ Add Business" button on the Businesses tab to get started.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-stone-700 bg-stone-900 overflow-hidden">
+                      <div className="divide-y divide-stone-800">
+                        {adminCreated.map(b => (
+                          <div key={b.id} className="flex items-center justify-between px-5 py-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-stone-800 overflow-hidden shrink-0">
+                                {b.logo_url
+                                  ? <img src={b.logo_url} alt="" className="w-full h-full object-cover" />
+                                  : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-stone-400">{b.name[0]}</div>
+                                }
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-white truncate">{b.name}</p>
+                                <p className="text-xs text-stone-400 truncate">{b.category} · {b.location_city} · Added {new Date(b.created_at).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <StatusBadge status={b.verification_status} />
+                              <button onClick={() => openDetail(b.id)}
+                                className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-800 hover:text-blue-400 transition-colors">
+                                <Eye size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -936,125 +1222,157 @@ export default function AdminPage() {
         />
       )}
 
+      {/* ── Add Business Modal ── */}
       {showAddBiz && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-8">
-    <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="font-semibold text-white">Add Business Manually</h2>
-        <button onClick={() => setShowAddBiz(false)} className="text-stone-400 hover:text-white">✕</button>
-      </div>
-      <div className="space-y-3">
-        {[
-          { label: "Business Name *",    key: "name",          ph: "e.g. GreenLeaf Catering"      },
-          { label: "Tagline",            key: "tagline",        ph: "Short one-liner"              },
-          { label: "Contact Email *",    key: "contact_email",  ph: "business@email.com"           },
-          { label: "Phone *",            key: "contact_phone",  ph: "+855 12 000 000"              },
-          { label: "Facebook Page URL",  key: "facebook_url",   ph: "https://facebook.com/page"    },
-          { label: "Telegram",           key: "telegram_url",   ph: "https://t.me/username"        },
-          { label: "Website",            key: "website_url",    ph: "https://yourbusiness.com"     },
-          { label: "City *",             key: "location_city",  ph: "Phnom Penh"                   },
-          { label: "Location Detail",    key: "location_detail",ph: "BKK1, Phnom Penh"             },
-          { label: "Google Map URL",     key: "map_url",        ph: "https://maps.google.com/..."  },
-          { label: "Logo URL",           key: "logo_url",       ph: "https://..."                   },
-          { label: "Gallery URLs",       key: "gallery_urls",   ph: "https://a.jpg, https://b.jpg" },
-          { label: "Subcategories",      key: "sub_categories", ph: "Organic, Catering, Vegan"      },
-          { label: "Services",           key: "services",       ph: "Event catering, Delivery"      },
-          { label: "Tags",               key: "tags",           ph: "eco, local, zero-waste"        },
-          { label: "Tax ID",             key: "tax_id",         ph: "Optional tax / company id"     },
-          { label: "Bulk Capacity",      key: "bulk_capacity",  ph: "e.g. Up to 2,000 meals/day"    },
-          { label: "Discount %",         key: "discount_percent", ph: "0 - 100"                    },
-          { label: "Founded Year",       key: "founded_year",   ph: "2022"                          },
-          { label: "Collaboration Types", key: "collaboration_types", ph: "supplier, partner"       },
-          { label: "Investment Amount",  key: "investment_amount", ph: "e.g. 25,000 USD"            },
-        ].map(f => (
-          <div key={f.key}>
-            <label className="block text-xs font-semibold text-stone-400 mb-1">{f.label}</label>
-            <input value={String((addBizForm as Record<string, string | boolean>)[f.key] ?? "")}
-              onChange={e => setAddBizForm(p => ({ ...p, [f.key]: e.target.value }))}
-              placeholder={f.ph}
-              className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 placeholder:text-stone-600" />
-          </div>
-        ))}
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Category *</label>
-          <select value={addBizForm.category}
-            onChange={e => setAddBizForm(p => ({ ...p, category: e.target.value }))}
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500">
-            <option value="">Select category</option>
-            {["Food","Ingredients","Packaging","Rentals","Event Services","Others"].map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Tier</label>
-          <select value={addBizForm.tier}
-            onChange={e => setAddBizForm(p => ({ ...p, tier: e.target.value }))}
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500">
-            {["Startup","SME","Company"].map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Description</label>
-          <textarea value={addBizForm.description}
-            onChange={e => setAddBizForm(p => ({ ...p, description: e.target.value }))} rows={3}
-            placeholder="Describe the business…"
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Eco Description</label>
-          <textarea value={addBizForm.eco_description}
-            onChange={e => setAddBizForm(p => ({ ...p, eco_description: e.target.value }))} rows={2}
-            placeholder="What makes this business eco-friendly?"
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Collaboration Description</label>
-          <textarea value={addBizForm.collaboration_description}
-            onChange={e => setAddBizForm(p => ({ ...p, collaboration_description: e.target.value }))} rows={2}
-            placeholder="How this business wants to collaborate"
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-stone-400 mb-1">Investment Description</label>
-          <textarea value={addBizForm.investment_description}
-            onChange={e => setAddBizForm(p => ({ ...p, investment_description: e.target.value }))} rows={2}
-            placeholder="Funding use-case or growth plan"
-            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600" />
-        </div>
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-700 bg-stone-800/60 p-3">
-          {[
-            { key: "bulk_support", label: "Bulk support" },
-            { key: "open_for_collaboration", label: "Open for collaboration" },
-            { key: "open_for_investment", label: "Open for investment" },
-            { key: "notify_by_email", label: "Notify by email" },
-            { key: "notify_by_phone", label: "Notify by phone" },
-          ].map(item => (
-            <label key={item.key} className="flex items-center gap-2 text-xs text-stone-200">
-              <input
-                type="checkbox"
-                checked={(addBizForm as Record<string, boolean | string>)[item.key] as boolean}
-                onChange={e => setAddBizForm(p => ({ ...p, [item.key]: e.target.checked }))}
-                className="rounded border-stone-600 bg-stone-900 text-brand-500"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-8">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-semibold text-white">Add Business Manually</h2>
+                <p className="text-xs text-stone-500 mt-0.5">Tagged as "Created by Admin Assistance" — status: Pending Verification</p>
+              </div>
+              <button onClick={() => { setShowAddBiz(false); setAddBizError(null); }} className="text-stone-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Inline error banner */}
+            {addBizError && (
+              <div className="mb-4 flex items-start gap-2 bg-red-950/60 border border-red-800 rounded-xl px-4 py-3">
+                <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-300">{addBizError}</p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {/* Text fields */}
+              {([
+                { label: "Business Name *",      key: "name",             ph: "e.g. GreenLeaf Catering"   },
+                { label: "Tagline",              key: "tagline",          ph: "Short one-liner"            },
+                { label: "Contact Email *",      key: "contact_email",    ph: "business@email.com"         },
+                { label: "Phone *",              key: "contact_phone",    ph: "+855 12 000 000"            },
+                { label: "Facebook Page URL",    key: "facebook_url",     ph: "https://facebook.com/page"  },
+                { label: "Telegram",             key: "telegram_url",     ph: "https://t.me/username"      },
+                { label: "Website",              key: "website_url",      ph: "https://yourbusiness.com"   },
+                { label: "City *",               key: "location_city",    ph: "Phnom Penh"                 },
+                { label: "Location Detail",      key: "location_detail",  ph: "BKK1, Phnom Penh"           },
+                { label: "Google Map URL",       key: "map_url",          ph: "https://maps.google.com/…"  },
+                { label: "Subcategories",        key: "sub_categories",   ph: "Organic, Catering, Vegan"   },
+                { label: "Services",             key: "services",         ph: "Event catering, Delivery"   },
+                { label: "Tags",                 key: "tags",             ph: "eco, local, zero-waste"     },
+                { label: "Tax ID",               key: "tax_id",           ph: "Optional tax / company id"  },
+                { label: "Bulk Capacity",        key: "bulk_capacity",    ph: "e.g. Up to 2,000 meals/day" },
+                { label: "Discount %",           key: "discount_percent", ph: "0 – 100"                    },
+                { label: "Founded Year",         key: "founded_year",     ph: "2022"                       },
+                { label: "Collaboration Types",  key: "collaboration_types", ph: "supplier, partner"       },
+                { label: "Investment Amount",    key: "investment_amount",   ph: "e.g. 25,000 USD"         },
+              ] as { label: string; key: keyof AddBizFormState; ph: string }[]).map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold text-stone-400 mb-1">{f.label}</label>
+                  <input
+                    value={String(addBizForm[f.key] ?? "")}
+                    onChange={e => setAddBizForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    placeholder={f.ph}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 placeholder:text-stone-600"
+                  />
+                </div>
+              ))}
+
+              {/* File uploads */}
+              <FileUploadField
+                label="Logo"
+                onChange={handleLogoChange}
+                previews={logoPreview}
               />
-              {item.label}
-            </label>
-          ))}
+              <FileUploadField
+                label="Gallery Images"
+                multiple
+                onChange={handleGalleryChange}
+                previews={galleryPreview}
+              />
+
+              {/* Selects */}
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 mb-1">Category *</label>
+                <select value={addBizForm.category}
+                  onChange={e => setAddBizForm(p => ({ ...p, category: e.target.value }))}
+                  className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500">
+                  <option value="">Select category</option>
+                  {["Food","Ingredients","Packaging","Rentals","Event Services","Others"].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 mb-1">Tier</label>
+                <select value={addBizForm.tier}
+                  onChange={e => setAddBizForm(p => ({ ...p, tier: e.target.value }))}
+                  className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500">
+                  {["Startup","SME","Company"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              {/* Textareas */}
+              {([
+                { key: "description",               label: "Description",               ph: "Describe the business…"                     },
+                { key: "eco_description",            label: "Eco Description",           ph: "What makes this business eco-friendly?"      },
+                { key: "collaboration_description",  label: "Collaboration Description", ph: "How this business wants to collaborate"      },
+                { key: "investment_description",     label: "Investment Description",    ph: "Funding use-case or growth plan"             },
+              ] as { key: keyof AddBizFormState; label: string; ph: string }[]).map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold text-stone-400 mb-1">{f.label}</label>
+                  <textarea
+                    value={String(addBizForm[f.key] ?? "")}
+                    onChange={e => setAddBizForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    rows={3}
+                    placeholder={f.ph}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 resize-none placeholder:text-stone-600"
+                  />
+                </div>
+              ))}
+
+              {/* Checkboxes */}
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-700 bg-stone-800/60 p-3">
+                {([
+                  { key: "bulk_support",           label: "Bulk support"           },
+                  { key: "open_for_collaboration", label: "Open for collaboration" },
+                  { key: "open_for_investment",    label: "Open for investment"    },
+                  { key: "notify_by_email",        label: "Notify by email"        },
+                  { key: "notify_by_phone",        label: "Notify by phone"        },
+                ] as { key: keyof AddBizFormState; label: string }[]).map(item => (
+                  <label key={item.key} className="flex items-center gap-2 text-xs text-stone-200">
+                    <input
+                      type="checkbox"
+                      checked={addBizForm[item.key] as boolean}
+                      onChange={e => setAddBizForm(p => ({ ...p, [item.key]: e.target.checked }))}
+                      className="rounded border-stone-600 bg-stone-900 text-brand-500"
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => { setShowAddBiz(false); setAddBizError(null); }}
+                className="flex-1 py-2 rounded-xl border border-stone-700 text-stone-300 text-sm hover:bg-stone-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddBusiness}
+                disabled={addBizSaving}
+                className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+              >
+                {addBizSaving && <Loader2 size={14} className="animate-spin" />}
+                {addBizSaving ? "Adding..." : "Add (Pending Verification)"}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="flex gap-3 mt-5">
-        <button onClick={() => setShowAddBiz(false)}
-          className="flex-1 py-2 rounded-xl border border-stone-700 text-stone-300 text-sm hover:bg-stone-800">
-          Cancel
-        </button>
-        <button onClick={handleAddBusiness} disabled={addBizSaving}
-          className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50">
-          {addBizSaving ? "Adding…" : "Add & Publish"}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={cn(
@@ -1067,12 +1385,4 @@ export default function AdminPage() {
       )}
     </div>
   );
-}
-
-// Needed for JSX in the modal
-function UsersIcon({ size, className }: { size: number; className?: string }) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-}
-function ClockIcon({ size, className }: { size: number; className?: string }) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
 }

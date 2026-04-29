@@ -161,13 +161,21 @@ function BusinessDashboardInner() {
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
 
+  const lastUnreadRef = useRef(0);
+
   const fetchUnread = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastUnreadRef.current < 5000) return;
+
+    lastUnreadRef.current = now;
+
     try {
       const convs = await listMyConversations();
       const count = convs.filter((c: any) => {
         const lastMsg = c.messages?.[c.messages.length - 1];
         return lastMsg && !lastMsg.read && lastMsg.senderRole !== "business";
       }).length;
+
       setUnreadCount(count);
     } catch (err) {
       console.error("Unread count fetch error:", err);
@@ -213,53 +221,88 @@ function BusinessDashboardInner() {
     }
   }, [router, fetchUnread]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+  load();}, []);
+
+  const lastFocusRef = useRef(0);
 
   useEffect(() => {
     const unsubscribe = onBusinessDataChanged(load);
-    const onFocus = () => load();
+
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusRef.current < 5000) return;
+      lastFocusRef.current = now;
+      load();
+    };
+
     window.addEventListener("focus", onFocus);
+
     return () => {
       unsubscribe();
       window.removeEventListener("focus", onFocus);
     };
   }, [load]);
 
-  useEffect(() => {
-    if (tab === "messages") {
-      setUnreadCount(0);
-    } else {
+    useEffect(() => {
+    if (tab !== "messages") {
       fetchUnread();
     }
-  }, [tab, fetchUnread]);
+  }, [tab]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !biz) return;
-    setLogoUrl(URL.createObjectURL(file));
-    setLogoUploading(true);
-    try {
-      const token = await getAccessToken();
-      const form  = new FormData();
-      form.append("file", file);
-      form.append("business_id", biz.id);
-      const res   = await fetch(`${API}/upload/business-logo`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
-      setLogoUrl(json.data.url);
-      setBiz(prev => prev ? { ...prev, logo: json.data.url } : prev);
-      notifyBusinessDataChanged({ id: biz.id, action: "updated" });
-      showToast("Logo updated.", true);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Logo upload failed.", false);
-    } finally {
-      setLogoUploading(false);
-    }
-  };
+  const file = e.target.files?.[0];
+  if (!file || !biz) return;
+
+  setLogoUploading(true);
+
+  // instant preview (optimistic UI)
+  const previewUrl = URL.createObjectURL(file);
+
+  setBiz(prev =>
+    prev
+      ? { ...prev, logo: previewUrl }
+      : prev
+  );
+
+  try {
+    const token = await getAccessToken();
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("business_id", biz.id);
+
+    const res = await fetch(`${API}/upload/business-logo`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
+
+    const finalUrl = json.data.url;
+
+    // 🔥 FINAL UPDATE (this is important)
+    setBiz(prev => prev ? { ...prev, logo: finalUrl } : prev);
+
+    // sync everywhere in app
+    notifyBusinessDataChanged({
+      id: biz.id,
+      action: "updated",
+    });
+
+    showToast("Logo updated.", true);
+
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "Logo upload failed.", false);
+
+    // rollback on error
+    setBiz(prev => prev ? { ...prev, logo: biz.logo } : prev);
+  } finally {
+    setLogoUploading(false);
+  }
+};
 
   const handleMarkComplete = async (id: string) => {
     try {
