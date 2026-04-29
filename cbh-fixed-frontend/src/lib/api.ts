@@ -135,6 +135,7 @@ export function businessToSupplier(b: any): Supplier {
     reviewCount: b.review_count ?? 0,
     // Extra fields the dashboard needs — passed through as-is
     verificationStatus: b.verification_status ?? "pending",
+    rejectionReason:    b.rejection_reason ?? undefined,
     isActive:           b.is_active           ?? false,
     notifyByEmail:      b.notify_by_email      ?? true,
     notifyByPhone:      b.notify_by_phone      ?? false,
@@ -289,6 +290,12 @@ export async function createBusiness(body: CreateBusinessPayload): Promise<Suppl
 export async function updateBusiness(id: string, body: Partial<CreateBusinessPayload>): Promise<Supplier> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/businesses/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+  return businessToSupplier(data);
+}
+
+export async function resubmitBusiness(id: string): Promise<Supplier> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await request<any>(`/businesses/${id}/resubmit`, { method: "POST" });
   return businessToSupplier(data);
 }
 

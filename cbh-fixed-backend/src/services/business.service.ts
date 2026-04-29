@@ -195,6 +195,26 @@ export class BusinessService {
     if (error) throw error;
   }
 
+  async resubmitForVerification(id: string, ownerId: string): Promise<Business> {
+    await this.assertOwner(id, ownerId);
+    const { data, error } = await this.db
+      .from("businesses")
+      .update({
+        verification_status: "pending",
+        is_active: false,
+        is_verified: false,
+        rejection_reason: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .in("verification_status", ["rejected", "revoked"])
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) throw new NotFoundError("Business");
+    return data as Business;
+  }
+
   private async assertOwner(businessId: string, ownerId: string): Promise<void> {
     const { data, error } = await this.db
       .from("businesses")

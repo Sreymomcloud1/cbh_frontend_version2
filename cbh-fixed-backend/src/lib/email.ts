@@ -135,6 +135,53 @@ export async function notifyBuyer(data: ToBuyerNotification) {
   });
 }
 
+export interface BusinessVerificationDecisionData {
+  businessName: string;
+  ownerEmail: string;
+  ownerName?: string;
+  action: "verify" | "reject" | "revoke";
+  reason?: string;
+}
+
+export async function notifyBusinessVerificationDecision(data: BusinessVerificationDecisionData) {
+  const t = createTransporter();
+  if (!t) {
+    console.warn("SMTP not configured — verification decision email skipped");
+    return;
+  }
+
+  const ownerLabel = data.ownerName?.trim() || "Business owner";
+  const dashboardLink = `${SITE}/auth/login?redirect=/business-dashboard`;
+  const titleByAction: Record<BusinessVerificationDecisionData["action"], string> = {
+    verify: "Your business has been verified",
+    reject: "Your business registration was rejected",
+    revoke: "Your business verification was revoked",
+  };
+
+  const reasonBlock = data.reason
+    ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;margin:16px 0">
+         <p style="margin:0 0 6px;color:#b91c1c;font-weight:700;font-size:13px">Reason from admin</p>
+         <p style="margin:0;color:#111;font-size:14px;white-space:pre-wrap">${data.reason}</p>
+       </div>`
+    : "";
+
+  await t.sendMail({
+    from: FROM,
+    to: data.ownerEmail,
+    subject: `${titleByAction[data.action]} — CBH`,
+    html: emailWrap(`
+      <h2 style="margin:0 0 8px;color:#111">${titleByAction[data.action]}</h2>
+      <p style="color:#6b7280;margin:0 0 16px">Hi ${ownerLabel},</p>
+      <p style="color:#111;margin:0 0 8px">
+        The status for <strong>${data.businessName}</strong> is now:
+        <strong style="text-transform:capitalize">${data.action === "verify" ? "Verified" : data.action === "reject" ? "Rejected" : "Revoked"}</strong>.
+      </p>
+      ${reasonBlock}
+      ${ctaButton(dashboardLink, "Open Business Dashboard")}
+    `),
+  });
+}
+
 export interface WelcomeEmailData {
   toEmail: string; name: string; role: "buyer" | "business"; loginUrl: string;
 }

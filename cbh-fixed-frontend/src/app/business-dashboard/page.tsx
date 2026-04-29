@@ -17,6 +17,7 @@ import {
   updateBusiness, 
   listMyConversations, // Added for unread counting
   updateRequestStatus,
+  resubmitBusiness,
   deleteAccount,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
@@ -49,18 +50,51 @@ function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => vo
   );
 }
 
-function PendingApprovalPage() {
+function PendingApprovalPage({
+  status,
+  reason,
+  onResubmit,
+  resubmitting,
+}: {
+  status: "pending" | "rejected" | "revoked";
+  reason?: string;
+  onResubmit?: () => Promise<void>;
+  resubmitting?: boolean;
+}) {
+  const isPending = status === "pending";
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4">
       <div className="max-w-md text-center">
-        <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center mx-auto mb-6">
-          <Clock className="w-9 h-9 text-amber-500" />
+        <div className={cn(
+          "w-20 h-20 rounded-full border-2 flex items-center justify-center mx-auto mb-6",
+          isPending ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"
+        )}>
+          {isPending ? <Clock className="w-9 h-9 text-amber-500" /> : <AlertCircle className="w-9 h-9 text-red-500" />}
         </div>
-        <h1 className="font-display text-2xl text-ink mb-3">Pending Admin Approval</h1>
+        <h1 className="font-display text-2xl text-ink mb-3">
+          {isPending ? "Pending Admin Approval" : status === "rejected" ? "Business Rejected" : "Verification Revoked"}
+        </h1>
         <p className="text-ink-muted text-sm leading-relaxed mb-4">
-          Your business registration is under review. Once an admin approves it, your business
-          will appear publicly in Explore Suppliers and you'll get full dashboard access.
+          {isPending
+            ? "Your business registration is under review. Once an admin approves it, your business will appear publicly in Explore Suppliers and you'll get full dashboard access."
+            : "Your dashboard remains accessible while this listing is unpublished. Update your information and resubmit for verification when ready."}
         </p>
+        {!isPending && reason && (
+          <div className="text-left bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+            <p className="text-xs text-red-700 font-semibold mb-1">Admin reason</p>
+            <p className="text-sm text-red-700">{reason}</p>
+          </div>
+        )}
+        {!isPending && onResubmit && (
+          <button
+            onClick={onResubmit}
+            disabled={resubmitting}
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-60"
+          >
+            {resubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {resubmitting ? "Resubmitting..." : "Resubmit for Verification"}
+          </button>
+        )}
         <p className="text-xs text-ink-faint">
           You'll receive an email at your registered address when approved.
         </p>
@@ -148,6 +182,7 @@ function BusinessDashboardInner() {
   const [eSaving,  setESaving]  = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [resubmitting, setResubmitting] = useState(false);
 
   const [curPw,    setCurPw]    = useState("");
   const [newPw,    setNewPw]    = useState("");
@@ -387,6 +422,22 @@ function BusinessDashboardInner() {
     }
   };
 
+  const handleResubmit = async () => {
+    if (!biz) return;
+    setResubmitting(true);
+    try {
+      const updated = await resubmitBusiness(biz.id);
+      setBiz(updated);
+      setIsPending(true);
+      notifyBusinessDataChanged({ id: biz.id, action: "updated" });
+      showToast("Business resubmitted. Status is now pending review.", true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to resubmit business.", false);
+    } finally {
+      setResubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -395,7 +446,17 @@ function BusinessDashboardInner() {
     );
   }
 
-  if (isPending) return <PendingApprovalPage />;
+  if (isPending && biz) {
+    const status = (biz.verificationStatus ?? "pending") as "pending" | "rejected" | "revoked";
+    return (
+      <PendingApprovalPage
+        status={status}
+        reason={biz.rejectionReason}
+        onResubmit={status === "pending" ? undefined : handleResubmit}
+        resubmitting={resubmitting}
+      />
+    );
+  }
   if (!biz) return null;
 
   const buyReqs    = requests.filter(r => r.purpose === "buy").length;

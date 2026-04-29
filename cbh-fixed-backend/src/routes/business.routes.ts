@@ -39,6 +39,9 @@ router.patch(
   ctrl.updateEcoScore.bind(ctrl)
 );
 
+// POST /api/v1/businesses/:id/resubmit
+router.post("/:id/resubmit", requireAuth, ctrl.resubmit.bind(ctrl));
+
 // DELETE /api/v1/businesses/:id
 router.delete("/:id", requireAuth, ctrl.remove.bind(ctrl));
 
