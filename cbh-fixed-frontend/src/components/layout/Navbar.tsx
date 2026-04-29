@@ -213,10 +213,7 @@ export default function Navbar() {
     const dim = size === "md" ? "w-9 h-9 text-sm" : "w-7 h-7 text-xs";
     return (
       <div className={cn("rounded-full bg-brand-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0", dim)}>
-        {authUser?.avatarUrl
-          ? <img src={authUser.avatarUrl} alt="" className="w-full h-full object-cover" />
-          : authUser?.initials
-        }
+        <img src={authUser?.avatarUrl || "/default-avatar.svg"} alt="Profile" className="w-full h-full object-cover" />
       </div>
     );
   };
@@ -374,10 +371,7 @@ export default function Navbar() {
                 <div className="space-y-1 pt-2 pb-1 border-t border-surface-100">
                   <Link href={profileHref} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-50">
                     <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
-                      {authUser.avatarUrl
-                        ? <img src={authUser.avatarUrl} alt="" className="w-full h-full object-cover" />
-                        : authUser.initials
-                      }
+                      <img src={authUser.avatarUrl || "/default-avatar.svg"} alt="Profile" className="w-full h-full object-cover" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-ink">{authUser.name}</p>

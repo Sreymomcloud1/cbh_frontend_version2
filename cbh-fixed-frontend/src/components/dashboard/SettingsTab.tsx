@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { updateProfile } from "@/lib/api";
+import { updateProfile, uploadAvatar } from "@/lib/api";
 import { notifyProfileUpdated } from "@/lib/data-events";
 import Button from "@/components/ui/Button";
 import type { User } from "@/types";
@@ -23,15 +23,16 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
+  const userWithOptionalFields = user as User & { phone?: string; avatar_url?: string };
   const [name,     setName]     = useState(user.name);
   const [email,    setEmail]    = useState(user.email);
-  const [phone, setPhone] = useState((user as any).phone ?? "");
+  const [phone, setPhone] = useState(userWithOptionalFields.phone ?? "");
   const [profileSaving,  setProfileSaving]  = useState(false);
   const [profileMsg,     setProfileMsg]     = useState("");
   const [profileError,   setProfileError]   = useState("");
   
   const [avatarPreview, setAvatarPreview] = useState<string>(
-    (user as any).avatar_url ?? user.avatar ?? ""
+    userWithOptionalFields.avatar_url ?? user.avatar ?? ""
   );
   const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,22 +64,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
     setProfileMsg("");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const ext  = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
-      const path = `${session.user.id}/avatar.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (uploadError) throw uploadError;
-
-      // Add cache-busting so browser shows new image immediately
-      const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
-      const freshUrl = `${publicUrl}?t=${Date.now()}`;
-
-      await updateProfile({ avatar_url: freshUrl });
+      const freshUrl = await uploadAvatar(file);
       setAvatarPreview(freshUrl);
       setProfileMsg("Profile photo updated.");
 
@@ -182,10 +168,11 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
         <div className="flex items-center gap-4">
           <div className="relative shrink-0">
             <div className="w-16 h-16 rounded-full overflow-hidden bg-brand-600 flex items-center justify-center text-white font-bold text-xl border-2 border-surface-200">
-              {avatarPreview
-                ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" />
-                : <span>{user.name[0]?.toUpperCase()}</span>
-              }
+              <img
+                src={avatarPreview || "/default-avatar.svg"}
+                alt="Profile"
+                className="w-full h-full object-cover"
+              />
             </div>
             <button onClick={() => fileInputRef.current?.click()} disabled={avatarUploading}
               className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center text-white shadow transition-colors disabled:opacity-50"

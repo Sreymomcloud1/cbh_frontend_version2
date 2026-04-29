@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   getProfile, listMyRequests, updateProfile, deleteAccount,
-  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness,
+  listMyConversations, updateConversationStatus, createReview, getBusinessById, getSavedBusinesses, getMyBusiness, uploadAvatar,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor } from "@/lib/utils";
 import { freshSupplierHref, notifyProfileUpdated, onProfileUpdated, onBusinessDataChanged } from "@/lib/data-events";
@@ -304,25 +304,19 @@ useEffect(() => {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setAvatarUrl(URL.createObjectURL(file));
+    const localUrl = URL.createObjectURL(file);
+    setAvatarUrl(localUrl);
     setAvatarUploading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-      const ext  = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
-      const path = `${session.user.id}/avatar.${ext}`;
-      const { error } = await supabase.storage
-        .from("avatars").upload(path, file, { upsert: true, contentType: file.type });
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
-      const fresh = `${publicUrl}?t=${Date.now()}`;
-      await updateProfile({ avatar_url: fresh });
+      const fresh = await uploadAvatar(file);
       setAvatarUrl(fresh);
       showToast("Photo updated.", true);
       notifyProfileUpdated({ avatarUrl: fresh });
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Upload failed.", false);
+      setAvatarUrl(user?.avatar ?? "");
     } finally {
+      URL.revokeObjectURL(localUrl);
       setAvatarUploading(false);
     }
   };
@@ -679,10 +673,11 @@ useEffect(() => {
                 <div className="flex items-center gap-4">
                   <div className="relative shrink-0">
                     <div className="w-16 h-16 rounded-full overflow-hidden bg-brand-600 flex items-center justify-center text-white font-bold text-xl border-2 border-surface-200">
-                      {avatarUrl
-                        ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                        : displayName[0]?.toUpperCase()
-                      }
+                      <img
+                        src={avatarUrl || "/default-avatar.svg"}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                     <button onClick={() => fileRef.current?.click()} disabled={avatarUploading}
                       className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-white shadow hover:bg-brand-700 transition-colors disabled:opacity-50">
