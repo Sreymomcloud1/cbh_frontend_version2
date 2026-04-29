@@ -163,6 +163,80 @@ async function syncBusinessOwnerRoleForVerification(
   await supabaseAdmin.auth.admin.updateUserById(ownerId, { user_metadata: meta }).catch(() => undefined);
 }
 
+async function sendVerificationMessageToBusinessOwner(params: {
+  adminId: string;
+  businessId: string;
+  businessName: string;
+  ownerId?: string;
+  action: "verify" | "reject" | "revoke";
+  reason?: string;
+}) {
+  const { adminId, businessId, businessName, ownerId, action, reason } = params;
+  if (!ownerId) return;
+
+  const nowIso = new Date().toISOString();
+  const messageContent =
+    action === "verify"
+      ? `Admin update: Your business "${businessName}" has been approved and is now visible in Explore Suppliers.`
+      : action === "reject"
+        ? `Admin update: Your business "${businessName}" was not approved.${
+            reason?.trim() ? ` Reason: ${reason.trim()}` : ""
+          }`
+        : `Admin update: Your business "${businessName}" has been revoked/unpublished.${
+            reason?.trim() ? ` Reason: ${reason.trim()}` : ""
+          }`;
+
+  // Create a lightweight system request so the message appears in the existing Messages UI.
+  const { data: req, error: reqErr } = await supabaseAdmin
+    .from("requests")
+    .insert({
+      buyer_id: adminId,
+      business_id: businessId,
+      purpose: "collaborate",
+      product: "CBH Verification Update",
+      quantity: null,
+      required_date: nowIso,
+      location: "CBH Admin",
+      notes: "system:admin_verification_notice",
+      status: "replied",
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+    .select("id")
+    .single();
+  if (reqErr || !req?.id) throw reqErr ?? new Error("Failed to create admin notice request");
+
+  const { data: conv, error: convErr } = await supabaseAdmin
+    .from("conversations")
+    .insert({
+      request_id: req.id,
+      business_id: businessId,
+      buyer_id: adminId,
+      status: "replied",
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+    .select("id")
+    .single();
+  if (convErr || !conv?.id) throw convErr ?? new Error("Failed to create admin notice conversation");
+
+  await supabaseAdmin
+    .from("requests")
+    .update({ conversation_id: conv.id, updated_at: nowIso })
+    .eq("id", req.id);
+
+  const { error: msgErr } = await supabaseAdmin
+    .from("messages")
+    .insert({
+      conversation_id: conv.id,
+      sender_id: adminId,
+      content: messageContent,
+      is_read: false,
+      created_at: nowIso,
+    });
+  if (msgErr) throw msgErr;
+}
+
 // POST /api/v1/admin/businesses/:id/verify
 router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, next) => {
   try {
@@ -274,6 +348,20 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
       } catch (e) {
         console.error("[admin/businesses/:id/verify] Owner notification email failed:", e);
       }
+    }
+
+    // Also deliver an in-app message to business Messages tab (best-effort).
+    try {
+      await sendVerificationMessageToBusinessOwner({
+        adminId,
+        businessId: bizId,
+        businessName,
+        ownerId,
+        action,
+        reason,
+      });
+    } catch (e) {
+      console.error("[admin/businesses/:id/verify] In-app verification message failed:", e);
     }
 
     sendSuccess(res, data);
