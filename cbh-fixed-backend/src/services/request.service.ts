@@ -8,6 +8,7 @@ import type {
 import { NotFoundError, ForbiddenError } from "@/lib/errors";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendMessageNotification } from "@/lib/email";
+import { createSystemNotification } from "@/lib/notifications";
 
 const REWARD_POINTS = {
   request_sent:    5,
@@ -202,6 +203,23 @@ export class RequestService {
           .from("conversations")
           .update({ status: "completed", updated_at: new Date().toISOString() })
           .eq("id", request.conversation_id);
+      }
+
+      if (request.business_id) {
+        const { data: biz } = await this.db
+          .from("businesses")
+          .select("owner_id, name")
+          .eq("id", request.business_id)
+          .maybeSingle();
+        if (biz?.owner_id) {
+          await createSystemNotification({
+            user_id: biz.owner_id as string,
+            type: "request",
+            reference_id: id,
+            title: "Request marked completed",
+            body: `A buyer marked the request for ${(biz.name as string) ?? "your business"} as completed.`,
+          });
+        }
       }
     }
 

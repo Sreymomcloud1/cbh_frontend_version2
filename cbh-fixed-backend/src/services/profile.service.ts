@@ -91,4 +91,39 @@ export class ProfileService {
       history:      rewardsRes.data ?? [],
     };
   }
+
+  async getNotifications(userId: string) {
+    const { data, error } = await this.db
+      .from("notifications")
+      .select("id, title, body, type, reference_id, is_read, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (error) throw error;
+    const unread = (data ?? []).filter((n) => !n.is_read).length;
+    return { items: data ?? [], unread };
+  }
+
+  async markNotificationRead(userId: string, notificationId: string) {
+    const { data, error } = await this.db
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notificationId)
+      .eq("user_id", userId)
+      .select("id, is_read")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new NotFoundError("Notification");
+    return data;
+  }
+
+  async markAllNotificationsRead(userId: string) {
+    const { error } = await this.db
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+    if (error) throw error;
+    return { updated: true };
+  }
 }

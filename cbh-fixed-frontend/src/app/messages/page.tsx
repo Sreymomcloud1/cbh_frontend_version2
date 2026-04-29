@@ -9,11 +9,13 @@ import { cn } from "@/lib/utils";
 function ReviewModal({
   businessId,
   businessName,
+  conversationId,
   onDone,
   onSkip,
 }: {
   businessId: string;
   businessName: string;
+  conversationId: string;
   onDone: () => void;
   onSkip: () => void;
 }) {
@@ -29,6 +31,7 @@ function ReviewModal({
       await createReview(businessId, {
         rating,
         comment: comment.trim() || undefined,
+        conversation_id: conversationId,
       });
       setDone(true);
       setTimeout(onDone, 1200);
@@ -96,7 +99,7 @@ function ReviewModal({
 }
 
 export default function MessagesPage() {
-  const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string } | null>(null);
+  const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string; convId: string } | null>(null);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -109,15 +112,16 @@ export default function MessagesPage() {
       </div>
       <MessagingInbox
         role="buyer"
-        onConversationCompleted={(_convId, bizId, bizName) => {
+        onConversationCompleted={(convId, bizId, bizName) => {
           if (!bizId) return;
-          setReviewModal({ bizId, bizName });
+          setReviewModal({ bizId, bizName, convId });
         }}
       />
       {reviewModal && (
         <ReviewModal
           businessId={reviewModal.bizId}
           businessName={reviewModal.bizName}
+          conversationId={reviewModal.convId}
           onDone={() => setReviewModal(null)}
           onSkip={() => setReviewModal(null)}
         />

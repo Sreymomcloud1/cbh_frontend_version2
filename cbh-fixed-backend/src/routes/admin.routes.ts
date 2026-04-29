@@ -2,6 +2,8 @@ import { Router } from "express";
 import { requireAuth, requireAdmin } from "@/middleware/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendSuccess, sendError } from "@/lib/response";
+import { notifyBusinessVerificationDecision } from "@/lib/email";
+import { createSystemNotification } from "@/lib/notifications";
 import { z } from "zod";
 import { validate } from "@/middleware/validate";
 import { randomUUID } from "node:crypto";
@@ -60,7 +62,37 @@ router.get("/businesses", async (req, res, next) => {
 
     const { data, error, count } = await query;
     if (error) throw error;
-    sendSuccess(res, data ?? [], 200, { total: count ?? 0 });
+    const rows = data ?? [];
+    if (rows.length === 0) {
+      sendSuccess(res, rows, 200, { total: count ?? 0 });
+      return;
+    }
+
+    const ids = rows.map((row) => row.id as string);
+    const { data: createdLogs } = await supabaseAdmin
+      .from("business_audit_log")
+      .select("business_id, admin_email")
+      .eq("action", "created")
+      .in("business_id", ids)
+      .order("created_at", { ascending: false });
+
+    const byBusiness = new Map<string, string>();
+    for (const log of createdLogs ?? []) {
+      if (!byBusiness.has(log.business_id as string)) {
+        byBusiness.set(log.business_id as string, (log.admin_email as string) ?? "");
+      }
+    }
+
+    const enriched = rows.map((row) => {
+      const adminCreatorEmail = byBusiness.get(row.id as string) ?? null;
+      return {
+        ...row,
+        created_by_admin: Boolean(adminCreatorEmail),
+        admin_creator_email: adminCreatorEmail,
+      };
+    });
+
+    sendSuccess(res, enriched, 200, { total: count ?? 0 });
   } catch (err) { next(err); }
 });
 
@@ -85,7 +117,13 @@ router.get("/businesses/:id", async (req, res, next) => {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    sendSuccess(res, { ...biz, audit_log: auditLog ?? [] });
+    const createdLog = (auditLog ?? []).find((entry) => entry.action === "created");
+    sendSuccess(res, {
+      ...biz,
+      created_by_admin: Boolean(createdLog),
+      admin_creator_email: createdLog?.admin_email ?? null,
+      audit_log: auditLog ?? [],
+    });
   } catch (err) { next(err); }
 });
 
@@ -151,6 +189,12 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
     if (error) throw error;
     if (!data) { sendError(res, 404, "Business not found", "NOT_FOUND"); return; }
 
+    const { data: ownerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("email, name")
+      .eq("id", data.owner_id as string)
+      .maybeSingle();
+
     // Write audit log
     await supabaseAdmin.from("business_audit_log").insert({
       business_id: bizId,
@@ -159,6 +203,34 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
       action:      logAction,
       reason:      reason ?? null,
     });
+
+    if (ownerProfile?.email) {
+      await notifyBusinessVerificationDecision({
+        businessName: data.name as string,
+        ownerEmail: ownerProfile.email as string,
+        ownerName: (ownerProfile.name as string | null) ?? undefined,
+        action,
+        reason,
+      });
+    }
+
+    if (ownerProfile) {
+      await createSystemNotification({
+        user_id: data.owner_id as string,
+        type: "verification",
+        reference_id: bizId,
+        title:
+          action === "verify"
+            ? "Business verified"
+            : action === "reject"
+            ? "Business rejected"
+            : "Verification revoked",
+        body:
+          action === "verify"
+            ? `${data.name as string} is now verified and publicly visible.`
+            : `Status update for ${data.name as string}.${reason ? ` Reason: ${reason}` : ""}`,
+      });
+    }
 
     sendSuccess(res, data);
   } catch (err) { next(err); }
@@ -383,9 +455,9 @@ router.post("/businesses/create", validate(createBusinessSchema), async (req, re
         investment_amount:      body.investment_amount ?? null,
         investment_description: body.investment_description ?? null,
         founded_year:         body.founded_year         ?? null,
-        is_verified:          true,
-        is_active:            true,
-        verification_status:  "verified",
+        is_verified:          false,
+        is_active:            false,
+        verification_status:  "pending",
         rating:               0,
         review_count:         0,
         notify_by_email:      body.notify_by_email      ?? true,
@@ -394,6 +466,13 @@ router.post("/businesses/create", validate(createBusinessSchema), async (req, re
       .select()
       .single();
     if (error) throw error;
+    await supabaseAdmin.from("business_audit_log").insert({
+      business_id: data.id as string,
+      admin_id: req.user.id,
+      admin_email: req.user.email ?? "",
+      action: "created",
+      reason: "Created by Admin Assistance",
+    });
     sendSuccess(res, data);
   } catch (err) { next(err); }
 });

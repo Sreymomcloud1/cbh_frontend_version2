@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, CheckCheck, Clock, ArrowLeft, CheckCircle } from "lucide-react";
+import Link from "next/link";
 import {
   listMyConversations, getConversation, sendMessage, updateConversationStatus,
 } from "@/lib/api";
@@ -170,6 +171,21 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
     }
   };
 
+  const handleContinueCompletedChat = async () => {
+    if (!activeConv) return;
+    try {
+      await updateConversationStatus(activeConv.id, { status: "in-progress" });
+      const full = await getConversation(activeConv.id);
+      setActiveConv(full);
+      setMessages(full.messages ?? []);
+      const data = await listMyConversations();
+      setConversations(data);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch {
+      // silent
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -327,9 +343,25 @@ export default function MessagingInbox({ role = "buyer", initialConvId, onConver
 
             {/* Completed indicator */}
             {activeConv.status === "completed" && (
-              <span className="flex items-center gap-1 text-xs text-green-600 font-medium shrink-0">
-                <CheckCircle className="w-3.5 h-3.5" /> Done
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                  <CheckCircle className="w-3.5 h-3.5" /> Done
+                </span>
+                <button
+                  onClick={handleContinueCompletedChat}
+                  className="text-xs px-2 py-1 rounded-lg border border-surface-200 text-ink hover:bg-surface-50"
+                >
+                  Continue old
+                </button>
+                {role === "buyer" && (
+                  <Link
+                    href={`/request?business=${activeConv.supplierId ?? ""}`}
+                    className="text-xs px-2 py-1 rounded-lg border border-brand-200 text-brand-700 hover:bg-brand-50"
+                  >
+                    New interaction
+                  </Link>
+                )}
+              </div>
             )}
           </div>
 

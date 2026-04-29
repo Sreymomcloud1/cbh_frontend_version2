@@ -17,7 +17,9 @@ import {
   updateBusiness, 
   listMyConversations, // Added for unread counting
   updateRequestStatus,
+  resubmitBusiness,
   deleteAccount,
+  getBusinessReviews,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
@@ -49,18 +51,51 @@ function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => vo
   );
 }
 
-function PendingApprovalPage() {
+function PendingApprovalPage({
+  status,
+  reason,
+  onResubmit,
+  resubmitting,
+}: {
+  status: "pending" | "rejected" | "revoked";
+  reason?: string;
+  onResubmit?: () => Promise<void>;
+  resubmitting?: boolean;
+}) {
+  const isPending = status === "pending";
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4">
       <div className="max-w-md text-center">
-        <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center mx-auto mb-6">
-          <Clock className="w-9 h-9 text-amber-500" />
+        <div className={cn(
+          "w-20 h-20 rounded-full border-2 flex items-center justify-center mx-auto mb-6",
+          isPending ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"
+        )}>
+          {isPending ? <Clock className="w-9 h-9 text-amber-500" /> : <AlertCircle className="w-9 h-9 text-red-500" />}
         </div>
-        <h1 className="font-display text-2xl text-ink mb-3">Pending Admin Approval</h1>
+        <h1 className="font-display text-2xl text-ink mb-3">
+          {isPending ? "Pending Admin Approval" : status === "rejected" ? "Business Rejected" : "Verification Revoked"}
+        </h1>
         <p className="text-ink-muted text-sm leading-relaxed mb-4">
-          Your business registration is under review. Once an admin approves it, your business
-          will appear publicly in Explore Suppliers and you'll get full dashboard access.
+          {isPending
+            ? "Your business registration is under review. Once an admin approves it, your business will appear publicly in Explore Suppliers and you'll get full dashboard access."
+            : "Your dashboard remains accessible while this listing is unpublished. Update your information and resubmit for verification when ready."}
         </p>
+        {!isPending && reason && (
+          <div className="text-left bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+            <p className="text-xs text-red-700 font-semibold mb-1">Admin reason</p>
+            <p className="text-sm text-red-700">{reason}</p>
+          </div>
+        )}
+        {!isPending && onResubmit && (
+          <button
+            onClick={onResubmit}
+            disabled={resubmitting}
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-60"
+          >
+            {resubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {resubmitting ? "Resubmitting..." : "Resubmit for Verification"}
+          </button>
+        )}
         <p className="text-xs text-ink-faint">
           You'll receive an email at your registered address when approved.
         </p>
@@ -148,6 +183,7 @@ function BusinessDashboardInner() {
   const [eSaving,  setESaving]  = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [resubmitting, setResubmitting] = useState(false);
 
   const [curPw,    setCurPw]    = useState("");
   const [newPw,    setNewPw]    = useState("");
@@ -157,6 +193,8 @@ function BusinessDashboardInner() {
   const [deletePw, setDeletePw] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [ownerInfo, setOwnerInfo] = useState<{ name: string; email: string; phone?: string | null } | null>(null);
+  const [reviews, setReviews] = useState<Array<{ id: string; rating: number; comment?: string | null; created_at: string; reviewer?: { name: string } }>>([]);
 
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
@@ -199,6 +237,8 @@ function BusinessDashboardInner() {
         ? []
         : (await listBusinessRequests(business.id, { limit: 50 })).requests ?? [];
       setRequests(reqs);
+      const reviewRows = await getBusinessReviews(business.id).catch(() => []);
+      setReviews(reviewRows);
 
       setEName(business.name);
       setETagline(business.tagline ?? "");
@@ -212,6 +252,22 @@ function BusinessDashboardInner() {
       setECollab(business.collaboration?.enabled ?? false);
       setEInvest(business.investment?.enabled ?? false);
       setENotify(business.notifyByEmail !== false);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("name, email, phone")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        if (profile) {
+          setOwnerInfo({
+            name: (profile as { name?: string }).name ?? "Business Owner",
+            email: (profile as { email?: string }).email ?? session.user.email ?? "",
+            phone: (profile as { phone?: string | null }).phone ?? null,
+          });
+        }
+      }
       
       await fetchUnread();
     } catch (err) {
@@ -387,6 +443,22 @@ function BusinessDashboardInner() {
     }
   };
 
+  const handleResubmit = async () => {
+    if (!biz) return;
+    setResubmitting(true);
+    try {
+      const updated = await resubmitBusiness(biz.id);
+      setBiz(updated);
+      setIsPending(true);
+      notifyBusinessDataChanged({ id: biz.id, action: "updated" });
+      showToast("Business resubmitted. Status is now pending review.", true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to resubmit business.", false);
+    } finally {
+      setResubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -395,7 +467,17 @@ function BusinessDashboardInner() {
     );
   }
 
-  if (isPending) return <PendingApprovalPage />;
+  if (isPending && biz) {
+    const status = (biz.verificationStatus ?? "pending") as "pending" | "rejected" | "revoked";
+    return (
+      <PendingApprovalPage
+        status={status}
+        reason={biz.rejectionReason}
+        onResubmit={status === "pending" ? undefined : handleResubmit}
+        resubmitting={resubmitting}
+      />
+    );
+  }
   if (!biz) return null;
 
   const buyReqs    = requests.filter(r => r.purpose === "buy").length;
@@ -617,6 +699,16 @@ function BusinessDashboardInner() {
                       {eSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                       {eSaving ? "Saving…" : "Save Changes"}
                     </button>
+                    {ownerInfo && (
+                      <div className="rounded-xl border border-surface-200 bg-surface-50 p-4">
+                        <p className="text-xs font-semibold text-ink mb-2">Owner Info</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div><span className="text-ink-faint">Name</span><p className="text-ink">{ownerInfo.name}</p></div>
+                          <div><span className="text-ink-faint">Email</span><p className="text-ink">{ownerInfo.email}</p></div>
+                          <div><span className="text-ink-faint">Phone</span><p className="text-ink">{ownerInfo.phone || "—"}</p></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -642,6 +734,38 @@ function BusinessDashboardInner() {
                     practices: biz.ecoScore.breakdown.practices ?? 0,
                   } as any}
                 />
+              </div>
+
+              <div className="bg-white rounded-2xl border border-surface-200 shadow-soft p-5">
+                <h3 className="font-semibold text-ink mb-1">Ratings & Reviews</h3>
+                <p className="text-xs text-ink-muted mb-4">Live review history and rating breakdown.</p>
+                <div className="grid grid-cols-5 gap-2 mb-4">
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const count = reviews.filter((r) => r.rating === star).length;
+                    return (
+                      <div key={star} className="rounded-lg border border-surface-200 p-2 text-center">
+                        <p className="text-xs text-ink-faint">{star}★</p>
+                        <p className="text-sm font-semibold text-ink">{count}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {reviews.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No reviews yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {reviews.map((r) => (
+                      <div key={r.id} className="rounded-xl border border-surface-100 bg-surface-50 p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-ink">{r.reviewer?.name ?? "Anonymous"}</p>
+                          <p className="text-xs text-ink-faint">{new Date(r.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <p className="text-xs text-amber-600">{`${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}`}</p>
+                        <p className="text-xs text-ink-muted mt-1">{r.comment || "No comment."}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

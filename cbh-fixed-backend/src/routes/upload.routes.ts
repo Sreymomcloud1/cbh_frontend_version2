@@ -61,15 +61,21 @@ router.post("/business-logo", requireAuth, upload.single("file"), async (req, re
       return;
     }
 
+    const { data: profile } = await req.supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", req.user.id)
+      .maybeSingle();
+    const isAdmin = profile?.role === "admin";
+
     const { data: biz, error: bizErr } = await req.supabase
       .from("businesses")
       .select("id, owner_id")
       .eq("id", business_id)
-      .eq("owner_id", req.user.id)
       .maybeSingle();
 
     if (bizErr) throw bizErr;
-    if (!biz) {
+    if (!biz || (!isAdmin && biz.owner_id !== req.user.id)) {
       res.status(403).json({ success: false, error: { message: "Business not found or access denied" } });
       return;
     }
@@ -105,15 +111,21 @@ router.post("/business-gallery", requireAuth, upload.single("file"), async (req,
       return;
     }
 
+    const { data: profile } = await req.supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", req.user.id)
+      .maybeSingle();
+    const isAdmin = profile?.role === "admin";
+
     const { data: biz, error: bizErr } = await req.supabase
       .from("businesses")
       .select("id, owner_id, gallery_urls")
       .eq("id", business_id)
-      .eq("owner_id", req.user.id)
       .maybeSingle();
 
     if (bizErr) throw bizErr;
-    if (!biz) {
+    if (!biz || (!isAdmin && biz.owner_id !== req.user.id)) {
       res.status(403).json({ success: false, error: { message: "Business not found or access denied" } });
       return;
     }

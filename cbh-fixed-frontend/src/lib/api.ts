@@ -135,6 +135,7 @@ export function businessToSupplier(b: any): Supplier {
     reviewCount: b.review_count ?? 0,
     // Extra fields the dashboard needs — passed through as-is
     verificationStatus: b.verification_status ?? "pending",
+    rejectionReason:    b.rejection_reason ?? undefined,
     isActive:           b.is_active           ?? false,
     notifyByEmail:      b.notify_by_email      ?? true,
     notifyByPhone:      b.notify_by_phone      ?? false,
@@ -289,6 +290,12 @@ export async function createBusiness(body: CreateBusinessPayload): Promise<Suppl
 export async function updateBusiness(id: string, body: Partial<CreateBusinessPayload>): Promise<Supplier> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await request<any>(`/businesses/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+  return businessToSupplier(data);
+}
+
+export async function resubmitBusiness(id: string): Promise<Supplier> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await request<any>(`/businesses/${id}/resubmit`, { method: "POST" });
   return businessToSupplier(data);
 }
 
@@ -498,10 +505,44 @@ export async function deleteAccount(): Promise<void> {
 // ─── Reviews ─────────────────────────────────────────────────────────────────
 export async function createReview(
   businessId: string,
-  body: { rating: number; comment?: string }
+  body: { rating: number; comment?: string; conversation_id: string }
 ): Promise<void> {
   await request<{ id: string }>(`/reviews/${businessId}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export interface BusinessReview {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  created_at: string;
+  reviewer?: { id: string; name: string; avatar_url?: string | null };
+}
+
+export async function getBusinessReviews(businessId: string): Promise<BusinessReview[]> {
+  return publicRequest<BusinessReview[]>(`/reviews/${businessId}`);
+}
+
+export interface InAppNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  reference_id?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export async function getMyNotifications(): Promise<{ items: InAppNotification[]; unread: number }> {
+  return request<{ items: InAppNotification[]; unread: number }>("/profile/me/notifications");
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await request<{ id: string; is_read: boolean }>(`/profile/me/notifications/${id}/read`, { method: "PATCH" });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await request<{ updated: boolean }>("/profile/me/notifications/read-all", { method: "PATCH" });
 }

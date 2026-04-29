@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, Leaf, LayoutDashboard, LogOut, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getUnreadCount } from "@/lib/api";
+import { getUnreadCount, getMyNotifications, markAllNotificationsRead, markNotificationRead, type InAppNotification } from "@/lib/api";
 import { onProfileUpdated } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
 import Button from "@/components/ui/Button";
@@ -41,9 +41,13 @@ export default function Navbar() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0); // Step 1: Unread count state
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null); // Ref for interval cleanup
 
   const buildAuthUser = useCallback(async (userId: string, email: string): Promise<AuthUser> => {
@@ -72,6 +76,17 @@ export default function Navbar() {
       setUnreadCount(count ?? 0);
     } catch (err) {
       console.error("Failed to fetch unread count", err);
+    }
+  }, []);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const data = await getMyNotifications();
+      setNotifications(data.items ?? []);
+      setNotifUnread(data.unread ?? 0);
+    } catch {
+      setNotifications([]);
+      setNotifUnread(0);
     }
   }, []);
 
@@ -108,12 +123,15 @@ export default function Navbar() {
     const startPolling = (userId: string) => {
       if (pollRef.current) clearInterval(pollRef.current);
       fetchUnreadCount(userId);
+      fetchNotifications();
       pollRef.current = setInterval(() => fetchUnreadCount(userId), 30000);
     };
 
     const stopPolling = () => {
       if (pollRef.current) clearInterval(pollRef.current);
       setUnreadCount(0);
+      setNotifications([]);
+      setNotifUnread(0);
     };
 
     // Initial session check
@@ -151,7 +169,7 @@ export default function Navbar() {
       subscription.unsubscribe();
       stopPolling();
     };
-  }, [buildAuthUser, fetchUnreadCount]);
+  }, [buildAuthUser, fetchUnreadCount, fetchNotifications]);
 
   // UI Handlers
   useEffect(() => {
@@ -164,6 +182,7 @@ export default function Navbar() {
     const fn = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
@@ -175,6 +194,8 @@ export default function Navbar() {
     setUserMenuOpen(false);
     setAuthUser(null);
     setUnreadCount(0);
+    setNotifications([]);
+    setNotifUnread(0);
     await logoutAndRefresh("/");
   };
 
@@ -258,13 +279,57 @@ export default function Navbar() {
               
               {/* Step 5: Bell with Notification Badge */}
               <div className="relative">
-                <button className="p-2 rounded-lg hover:bg-surface-50 text-ink-muted">
+                <button
+                  onClick={() => {
+                    setNotifOpen((prev) => !prev);
+                    if (!notifOpen) fetchNotifications();
+                  }}
+                  className="p-2 rounded-lg hover:bg-surface-50 text-ink-muted"
+                >
                   <Bell className="w-4 h-4" />
                 </button>
-                {unreadCount > 0 && (
+                {notifUnread > 0 && (
                   <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold border-2 border-white">
-                    {unreadCount > 9 ? "9+" : unreadCount}
+                    {notifUnread > 9 ? "9+" : notifUnread}
                   </span>
+                )}
+                {notifOpen && (
+                  <div ref={notifRef} className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl border border-surface-200 shadow-lift p-2 animate-slide-down z-50">
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <p className="text-xs font-semibold text-ink">Notifications</p>
+                      <button
+                        onClick={async () => {
+                          await markAllNotificationsRead();
+                          await fetchNotifications();
+                        }}
+                        className="text-[10px] text-brand-600 hover:underline"
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto space-y-1 mt-1">
+                      {notifications.length === 0 ? (
+                        <p className="text-xs text-ink-faint px-2 py-3">No notifications yet.</p>
+                      ) : notifications.map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={async () => {
+                            if (!n.is_read) {
+                              await markNotificationRead(n.id);
+                              await fetchNotifications();
+                            }
+                          }}
+                          className={cn(
+                            "w-full text-left px-2 py-2 rounded-xl border transition-colors",
+                            n.is_read ? "bg-white border-surface-100" : "bg-brand-50 border-brand-200"
+                          )}
+                        >
+                          <p className="text-xs font-semibold text-ink">{n.title}</p>
+                          <p className="text-[11px] text-ink-muted mt-0.5 line-clamp-2">{n.body}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 
