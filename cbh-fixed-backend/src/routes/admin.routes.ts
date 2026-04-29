@@ -4,7 +4,15 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { sendSuccess, sendError } from "@/lib/response";
 import { z } from "zod";
 import { validate } from "@/middleware/validate";
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { AppError, ConflictError } from "@/lib/errors";
+import { env } from "@/config/env";
+import {
+  isSmtpConfigured,
+  sendAdminCreatedOwnerCredentialsEmail,
+  sendBusinessVerificationApprovedEmail,
+  sendBusinessVerificationRejectedEmail,
+} from "@/lib/email";
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -91,10 +99,69 @@ router.get("/businesses/:id", async (req, res, next) => {
 
 // ── Verification actions ─────────────────────────────────────────────────────
 
-const verifySchema = z.object({
-  action: z.enum(["verify", "reject", "revoke"]),
-  reason: z.string().max(500).optional(),
-});
+const verifySchema = z
+  .object({
+    action: z.enum(["verify", "reject", "revoke"]),
+    reason: z.string().max(500).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if ((data.action === "reject" || data.action === "revoke") && !data.reason?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A reason is required when rejecting or revoking.",
+        path: ["reason"],
+      });
+    }
+  });
+
+/** Keeps admin /users in sync with business verification (profile.role + auth user_metadata). */
+async function syncBusinessOwnerRoleForVerification(
+  ownerId: string,
+  mode: "verified" | "unlisted",
+): Promise<void> {
+  const { data: prof } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", ownerId)
+    .maybeSingle();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((prof as any)?.role === "admin") return;
+
+  if (mode === "verified") {
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        role: "business",
+        pending_business: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ownerId);
+    if (error) throw error;
+  } else {
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        role: "buyer",
+        pending_business: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ownerId);
+    if (error) throw error;
+  }
+
+  const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(ownerId);
+  if (authErr || !authData?.user) return;
+
+  const meta: Record<string, unknown> = { ...(authData.user.user_metadata ?? {}) };
+  if (mode === "verified") {
+    meta.role = "business";
+    meta.intended_role = "business";
+  } else {
+    meta.role = "buyer";
+    meta.intended_role = "buyer";
+  }
+  await supabaseAdmin.auth.admin.updateUserById(ownerId, { user_metadata: meta }).catch(() => undefined);
+}
 
 // POST /api/v1/admin/businesses/:id/verify
 router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, next) => {
@@ -151,6 +218,16 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
     if (error) throw error;
     if (!data) { sendError(res, 404, "Business not found", "NOT_FOUND"); return; }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownerId = (data as any).owner_id as string | undefined;
+    if (ownerId) {
+      if (action === "verify") {
+        await syncBusinessOwnerRoleForVerification(ownerId, "verified");
+      } else {
+        await syncBusinessOwnerRoleForVerification(ownerId, "unlisted");
+      }
+    }
+
     // Write audit log
     await supabaseAdmin.from("business_audit_log").insert({
       business_id: bizId,
@@ -159,6 +236,45 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
       action:      logAction,
       reason:      reason ?? null,
     });
+
+    // Notify business contact email (best-effort; admin action already persisted)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any;
+    const contactEmail = String(row.contact_email ?? "").trim();
+    const businessName = String(row.name ?? "Your listing");
+    let ownerDisplayName = businessName;
+    if (ownerId) {
+      const { data: prof } = await supabaseAdmin.from("profiles").select("name").eq("id", ownerId).maybeSingle();
+      const n = (prof as { name?: string } | null)?.name?.trim();
+      if (n) ownerDisplayName = n;
+    }
+    const siteBase = (env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    const dashboardUrl = `${siteBase}/business-dashboard`;
+    const loginUrl = `${siteBase}/auth/login`;
+
+    if (contactEmail) {
+      try {
+        if (action === "verify") {
+          await sendBusinessVerificationApprovedEmail({
+            toEmail: contactEmail,
+            ownerName: ownerDisplayName,
+            businessName,
+            dashboardUrl,
+          });
+        } else {
+          await sendBusinessVerificationRejectedEmail({
+            toEmail: contactEmail,
+            ownerName: ownerDisplayName,
+            businessName,
+            kind: action === "revoke" ? "revoked" : "rejected",
+            reason: reason?.trim() || "No additional details provided.",
+            loginUrl,
+          });
+        }
+      } catch (e) {
+        console.error("[admin/businesses/:id/verify] Owner notification email failed:", e);
+      }
+    }
 
     sendSuccess(res, data);
   } catch (err) { next(err); }
@@ -297,33 +413,93 @@ const createBusinessSchema = z.object({
   }
 });
 
-async function createImportOwnerEmailFallback(adminId: string, businessName: string) {
-  const fallbackEmail = `import+${randomUUID()}@cbh.local`;
-  const createResult = await supabaseAdmin.auth.admin.createUser({
-    email: fallbackEmail,
-    password: randomUUID(),
-    email_confirm: true,
-    user_metadata: {
-      name: `Imported - ${businessName}`.slice(0, 120),
-      role: "business",
-      intended_role: "business",
-      imported_by: adminId,
-      imported_listing: true,
-    },
-  });
-  if (createResult.error || !createResult.data.user?.id) {
-    throw createResult.error ?? new Error("Failed to create imported owner account.");
-  }
-  return createResult.data.user.id;
+function generateOwnerTempPassword(): string {
+  return randomBytes(18).toString("hex");
 }
 
-async function resolveOwnerIdForAdminCreate(payload: z.infer<typeof createBusinessSchema>, adminId: string) {
-  if (payload.owner_user_id) return payload.owner_user_id;
+/**
+ * Creates a Supabase Auth user + profile row for the business contact (no email yet).
+ * Caller must send credentials after the business row is inserted successfully.
+ */
+async function provisionNewBusinessAuthUser(params: {
+  email: string;
+  businessName: string;
+  contactPhone: string;
+}): Promise<{ userId: string; password: string }> {
+  if (!isSmtpConfigured()) {
+    throw new AppError(
+      503,
+      "Cannot create a new owner account: SMTP is not configured. Set SMTP_USER and SMTP_PASS (and optional SMTP_HOST / SMTP_FROM), then try again.",
+      "SMTP_NOT_CONFIGURED",
+    );
+  }
+
+  const email = params.email.trim().toLowerCase();
+  const password = generateOwnerTempPassword();
+  const displayName = params.businessName.trim().slice(0, 120);
+
+  const createResult = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      name: displayName,
+      role: "business",
+      intended_role: "business",
+    },
+  });
+
+  if (createResult.error || !createResult.data.user?.id) {
+    const msg = createResult.error?.message ?? "";
+    if (/already|registered|exists|duplicate/i.test(msg)) {
+      throw new ConflictError(
+        "An account with this contact email already exists in authentication. Use a different email, or link an existing user via owner_user_id if your API supports it.",
+      );
+    }
+    throw createResult.error ?? new Error("Failed to create authentication user for this business.");
+  }
+
+  const userId = createResult.data.user.id;
+
+  const { error: profErr } = await supabaseAdmin
+    .from("profiles")
+    .update({
+      name: displayName,
+      role: "business",
+      phone: params.contactPhone.trim().slice(0, 40),
+      pending_business: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+
+  if (profErr) {
+    await supabaseAdmin.auth.admin.deleteUser(userId);
+    throw profErr;
+  }
+
+  return { userId, password };
+}
+
+type AdminCreateOwnerResolution = {
+  ownerId: string;
+  invitedNewOwner: boolean;
+  /** When set, email credentials after the business insert succeeds */
+  pendingInvitePassword?: string;
+};
+
+async function resolveOwnerIdForAdminCreate(
+  payload: z.infer<typeof createBusinessSchema>,
+): Promise<AdminCreateOwnerResolution> {
+  if (payload.owner_user_id) {
+    return { ownerId: payload.owner_user_id, invitedNewOwner: false };
+  }
+
+  const emailNorm = payload.contact_email.trim().toLowerCase();
 
   const { data: existingProfile } = await supabaseAdmin
     .from("profiles")
     .select("id")
-    .eq("email", payload.contact_email)
+    .eq("email", emailNorm)
     .maybeSingle();
 
   if (existingProfile?.id) {
@@ -333,18 +509,29 @@ async function resolveOwnerIdForAdminCreate(payload: z.infer<typeof createBusine
       .eq("owner_id", existingProfile.id)
       .eq("is_active", true);
 
-    if ((count ?? 0) === 0) return existingProfile.id;
+    if ((count ?? 0) >= 1) {
+      throw new ConflictError(
+        "This contact email already belongs to a user with an active business. Use another email or deactivate the existing listing first.",
+      );
+    }
+
+    return { ownerId: existingProfile.id, invitedNewOwner: false };
   }
 
-  return createImportOwnerEmailFallback(adminId, payload.name);
+  const { userId, password } = await provisionNewBusinessAuthUser({
+    email: payload.contact_email,
+    businessName: payload.name,
+    contactPhone: payload.contact_phone,
+  });
+
+  return { ownerId: userId, invitedNewOwner: true, pendingInvitePassword: password };
 }
 
 // POST /api/v1/admin/businesses/create — admin manually adds a business
 router.post("/businesses/create", validate(createBusinessSchema), async (req, res, next) => {
   try {
-    const adminId = req.user.id;
     const body = req.body as z.infer<typeof createBusinessSchema>;
-    const ownerId = await resolveOwnerIdForAdminCreate(body, adminId);
+    const { ownerId, invitedNewOwner, pendingInvitePassword } = await resolveOwnerIdForAdminCreate(body);
 
     const { data, error } = await supabaseAdmin
       .from("businesses")
@@ -393,8 +580,60 @@ router.post("/businesses/create", validate(createBusinessSchema), async (req, re
       })
       .select()
       .single();
-    if (error) throw error;
-    sendSuccess(res, data);
+    if (error) {
+      if (invitedNewOwner) {
+        await supabaseAdmin.auth.admin.deleteUser(ownerId).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    await supabaseAdmin
+      .from("profiles")
+      .update({
+        role: "business",
+        phone: body.contact_phone.trim().slice(0, 40),
+        pending_business: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ownerId);
+
+    await supabaseAdmin.auth.admin
+      .updateUserById(ownerId, {
+        user_metadata: {
+          name: body.name.trim().slice(0, 120),
+          role: "business",
+          intended_role: "business",
+        },
+      })
+      .catch(() => undefined);
+
+    let ownerCredentialsEmailed = false;
+    let ownerCredentialsEmailError: string | undefined;
+    if (invitedNewOwner && pendingInvitePassword) {
+      const site = env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+      const loginUrl = `${site.replace(/\/$/, "")}/auth/login`;
+      const displayName = body.name.trim().slice(0, 120);
+      const toEmail = body.contact_email.trim().toLowerCase();
+      try {
+        await sendAdminCreatedOwnerCredentialsEmail({
+          toEmail,
+          recipientName: displayName,
+          businessName: body.name.trim(),
+          temporaryPassword: pendingInvitePassword,
+          loginUrl,
+        });
+        ownerCredentialsEmailed = true;
+      } catch (e) {
+        ownerCredentialsEmailError = e instanceof Error ? e.message : "Email send failed";
+        console.error("[admin/businesses/create] Owner invite email failed:", e);
+      }
+    }
+
+    sendSuccess(res, {
+      ...data,
+      ownerCredentialsEmailed,
+      ...(ownerCredentialsEmailError ? { ownerCredentialsEmailError } : {}),
+    });
   } catch (err) { next(err); }
 });
 

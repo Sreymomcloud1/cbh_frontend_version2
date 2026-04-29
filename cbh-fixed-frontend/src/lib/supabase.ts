@@ -9,18 +9,34 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    auth: {
-      persistSession:     true,
-      autoRefreshToken:   true,
-      detectSessionInUrl: true,
-      storageKey:         "cbh-auth-token",
-    },
-  }
-);
+/** Auth-js options; createClient’s typings omit some keys (e.g. lockAcquireTimeout) until aligned. */
+const authOptions = {
+  persistSession:     true,
+  autoRefreshToken:   true,
+  /**
+   * Password recovery on `/auth/reset-password` is handled explicitly (hash / PKCE code)
+   * so it does not race GoTrue’s built-in URL detection on the same Web Lock (Strict Mode
+   * double mount + setSession + getSession was causing NavigatorLockAcquireTimeoutError).
+   */
+  detectSessionInUrl: (url: URL, params: Record<string, string>) => {
+    if (url.pathname.includes("/auth/reset-password")) return false;
+    return Boolean(
+      params.access_token ||
+        params.refresh_token ||
+        params.code ||
+        params.error ||
+        params.error_description
+    );
+  },
+  /** Default 5000ms is tight when multiple auth calls overlap (e.g. React Strict Mode). */
+  lockAcquireTimeout: 30_000,
+  storageKey:         "cbh-auth-token",
+} as const;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // Runtime supports lockAcquireTimeout + custom detectSessionInUrl; bundled types can lag.
+  auth: authOptions as never,
+});
 
 // ── Token cache ───────────────────────────────────────────────────────────────
 // Caches the access token in memory so api.ts never hits localStorage repeatedly.
