@@ -19,6 +19,7 @@ import {
   updateRequestStatus,
   resubmitBusiness,
   deleteAccount,
+  getBusinessReviews,
 } from "@/lib/api";
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
@@ -192,6 +193,8 @@ function BusinessDashboardInner() {
   const [deletePw, setDeletePw] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [ownerInfo, setOwnerInfo] = useState<{ name: string; email: string; phone?: string | null } | null>(null);
+  const [reviews, setReviews] = useState<Array<{ id: string; rating: number; comment?: string | null; created_at: string; reviewer?: { name: string } }>>([]);
 
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
@@ -234,6 +237,8 @@ function BusinessDashboardInner() {
         ? []
         : (await listBusinessRequests(business.id, { limit: 50 })).requests ?? [];
       setRequests(reqs);
+      const reviewRows = await getBusinessReviews(business.id).catch(() => []);
+      setReviews(reviewRows);
 
       setEName(business.name);
       setETagline(business.tagline ?? "");
@@ -247,6 +252,22 @@ function BusinessDashboardInner() {
       setECollab(business.collaboration?.enabled ?? false);
       setEInvest(business.investment?.enabled ?? false);
       setENotify(business.notifyByEmail !== false);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("name, email, phone")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        if (profile) {
+          setOwnerInfo({
+            name: (profile as { name?: string }).name ?? "Business Owner",
+            email: (profile as { email?: string }).email ?? session.user.email ?? "",
+            phone: (profile as { phone?: string | null }).phone ?? null,
+          });
+        }
+      }
       
       await fetchUnread();
     } catch (err) {
@@ -678,6 +699,16 @@ function BusinessDashboardInner() {
                       {eSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                       {eSaving ? "Saving…" : "Save Changes"}
                     </button>
+                    {ownerInfo && (
+                      <div className="rounded-xl border border-surface-200 bg-surface-50 p-4">
+                        <p className="text-xs font-semibold text-ink mb-2">Owner Info</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div><span className="text-ink-faint">Name</span><p className="text-ink">{ownerInfo.name}</p></div>
+                          <div><span className="text-ink-faint">Email</span><p className="text-ink">{ownerInfo.email}</p></div>
+                          <div><span className="text-ink-faint">Phone</span><p className="text-ink">{ownerInfo.phone || "—"}</p></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -703,6 +734,38 @@ function BusinessDashboardInner() {
                     practices: biz.ecoScore.breakdown.practices ?? 0,
                   } as any}
                 />
+              </div>
+
+              <div className="bg-white rounded-2xl border border-surface-200 shadow-soft p-5">
+                <h3 className="font-semibold text-ink mb-1">Ratings & Reviews</h3>
+                <p className="text-xs text-ink-muted mb-4">Live review history and rating breakdown.</p>
+                <div className="grid grid-cols-5 gap-2 mb-4">
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const count = reviews.filter((r) => r.rating === star).length;
+                    return (
+                      <div key={star} className="rounded-lg border border-surface-200 p-2 text-center">
+                        <p className="text-xs text-ink-faint">{star}★</p>
+                        <p className="text-sm font-semibold text-ink">{count}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {reviews.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No reviews yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {reviews.map((r) => (
+                      <div key={r.id} className="rounded-xl border border-surface-100 bg-surface-50 p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-ink">{r.reviewer?.name ?? "Anonymous"}</p>
+                          <p className="text-xs text-ink-faint">{new Date(r.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <p className="text-xs text-amber-600">{`${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}`}</p>
+                        <p className="text-xs text-ink-muted mt-1">{r.comment || "No comment."}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

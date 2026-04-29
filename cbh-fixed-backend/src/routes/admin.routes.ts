@@ -3,6 +3,7 @@ import { requireAuth, requireAdmin } from "@/middleware/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendSuccess, sendError } from "@/lib/response";
 import { notifyBusinessVerificationDecision } from "@/lib/email";
+import { createSystemNotification } from "@/lib/notifications";
 import { z } from "zod";
 import { validate } from "@/middleware/validate";
 import { randomUUID } from "node:crypto";
@@ -210,6 +211,24 @@ router.post("/businesses/:id/verify", validate(verifySchema), async (req, res, n
         ownerName: (ownerProfile.name as string | null) ?? undefined,
         action,
         reason,
+      });
+    }
+
+    if (ownerProfile) {
+      await createSystemNotification({
+        user_id: data.owner_id as string,
+        type: "verification",
+        reference_id: bizId,
+        title:
+          action === "verify"
+            ? "Business verified"
+            : action === "reject"
+            ? "Business rejected"
+            : "Verification revoked",
+        body:
+          action === "verify"
+            ? `${data.name as string} is now verified and publicly visible.`
+            : `Status update for ${data.name as string}.${reason ? ` Reason: ${reason}` : ""}`,
       });
     }
 

@@ -3,10 +3,15 @@ import type { SendMessageInput, UpdateConversationStatusInput } from "@/validato
 import { NotFoundError, ForbiddenError } from "@/lib/errors";
 import { notifyBusiness, notifyBuyer } from "@/lib/email";
 import { env } from "@/config/env";
+import { supabaseAdmin } from "@/lib/supabase";
+import { createSystemNotification } from "@/lib/notifications";
 
 export class MessageService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(private db: SupabaseClient<any>) {}
+  private static readonly REWARD_POINTS = {
+    deal_completed: 10,
+  } as const;
 
   // ── List conversations for current user ───────────────────────────────────
   async getMyConversations(userId: string, status?: string) {
@@ -127,7 +132,10 @@ export class MessageService {
     // Update conversation timestamp; set status to "replied" only when business responds
     await this.db
       .from("conversations")
-      .update({ updated_at: new Date().toISOString(), ...(isBusinessSender ? { status: "replied" } : {}) })
+      .update({
+        updated_at: new Date().toISOString(),
+        ...(isBusinessSender ? { status: "replied" } : { status: "pending" }),
+      })
       .eq("id", conversationId)
       .neq("status", "completed");
 
@@ -241,6 +249,18 @@ export class MessageService {
   // ── Update conversation status ────────────────────────────────────────────
 async updateConversationStatus(conversationId: string, userId: string, input: UpdateConversationStatusInput) {
     await this.assertParticipant(conversationId, userId);
+    const { data: convBefore } = await this.db
+      .from("conversations")
+      .select("id, buyer_id, business_id, request_id, status")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (!convBefore) throw new NotFoundError("Conversation");
+
+    // Only the buyer who owns the conversation can complete it.
+    if (input.status === "completed" && convBefore.buyer_id !== userId) {
+      throw new ForbiddenError("Only the buyer can mark this conversation as completed");
+    }
+
     const { data, error } = await this.db
       .from("conversations")
       .update({ status: input.status, updated_at: new Date().toISOString() })
@@ -248,7 +268,60 @@ async updateConversationStatus(conversationId: string, userId: string, input: Up
       .select()
       .single();
     if (error) throw error;
+
+    if (input.status === "completed" && convBefore.request_id) {
+      await this.db
+        .from("requests")
+        .update({ status: "completed", updated_at: new Date().toISOString() })
+        .eq("id", convBefore.request_id);
+
+      await this.awardPoints(convBefore.buyer_id as string, "deal_completed", MessageService.REWARD_POINTS.deal_completed, convBefore.request_id as string);
+
+      const { data: biz } = await this.db
+        .from("businesses")
+        .select("owner_id, name")
+        .eq("id", convBefore.business_id as string)
+        .maybeSingle();
+
+      if (biz?.owner_id) {
+        await createSystemNotification({
+          user_id: biz.owner_id as string,
+          type: "conversation",
+          reference_id: convBefore.id as string,
+          title: "Conversation completed",
+          body: `A buyer completed the conversation for ${(biz.name as string) ?? "your business"}.`,
+        });
+      }
+    }
+
     return data;
+  }
+
+  private async awardPoints(
+    userId: string,
+    action: string,
+    points: number,
+    referenceId: string
+  ): Promise<void> {
+    const { error: rewardErr } = await supabaseAdmin.from("rewards").insert({
+      user_id: userId, action, points, reference_id: referenceId,
+    });
+    if (rewardErr) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcError } = await supabaseAdmin.rpc("increment_points", { user_id: userId, amount: points } as any);
+    if (rpcError) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("reward_points")
+        .eq("id", userId)
+        .maybeSingle();
+      if (profile) {
+        await supabaseAdmin
+          .from("profiles")
+          .update({ reward_points: ((profile as { reward_points?: number }).reward_points ?? 0) + points })
+          .eq("id", userId);
+      }
+    }
   }
 
   // ── Guard: only participants can read/write ───────────────────────────────

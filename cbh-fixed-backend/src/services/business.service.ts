@@ -40,7 +40,7 @@ export class BusinessService {
   // 3. Status Filter
   // IMPORTANT: Ensure your DB column 'is_active' is actually 'true' and not NULL.
   // If you want to show everything regardless of status for debugging, comment this line.
-  query = query.eq("is_active", true);
+  query = query.eq("is_active", true).eq("is_verified", true).eq("verification_status", "verified");
 
   // 4. Dynamic Filters
   if (search) {
@@ -103,6 +103,8 @@ export class BusinessService {
       .select("*")
       .eq("id", id)
       .eq("is_active", true)
+      .eq("is_verified", true)
+      .eq("verification_status", "verified")
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new NotFoundError("Business");

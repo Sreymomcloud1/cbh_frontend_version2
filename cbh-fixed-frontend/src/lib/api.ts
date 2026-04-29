@@ -505,10 +505,44 @@ export async function deleteAccount(): Promise<void> {
 // ─── Reviews ─────────────────────────────────────────────────────────────────
 export async function createReview(
   businessId: string,
-  body: { rating: number; comment?: string }
+  body: { rating: number; comment?: string; conversation_id: string }
 ): Promise<void> {
   await request<{ id: string }>(`/reviews/${businessId}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export interface BusinessReview {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  created_at: string;
+  reviewer?: { id: string; name: string; avatar_url?: string | null };
+}
+
+export async function getBusinessReviews(businessId: string): Promise<BusinessReview[]> {
+  return publicRequest<BusinessReview[]>(`/reviews/${businessId}`);
+}
+
+export interface InAppNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  reference_id?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export async function getMyNotifications(): Promise<{ items: InAppNotification[]; unread: number }> {
+  return request<{ items: InAppNotification[]; unread: number }>("/profile/me/notifications");
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await request<{ id: string; is_read: boolean }>(`/profile/me/notifications/${id}/read`, { method: "PATCH" });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await request<{ updated: boolean }>("/profile/me/notifications/read-all", { method: "PATCH" });
 }

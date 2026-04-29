@@ -27,6 +27,15 @@ router.post("/me/saved/:businessId", ctrl.toggleSaveBusiness.bind(ctrl));
 // GET  /api/v1/profile/me/rewards
 router.get("/me/rewards", ctrl.getRewards.bind(ctrl));
 
+// GET /api/v1/profile/me/notifications
+router.get("/me/notifications", ctrl.getNotifications.bind(ctrl));
+
+// PATCH /api/v1/profile/me/notifications/:id/read
+router.patch("/me/notifications/:id/read", ctrl.markNotificationRead.bind(ctrl));
+
+// PATCH /api/v1/profile/me/notifications/read-all
+router.patch("/me/notifications/read-all", ctrl.markAllNotificationsRead.bind(ctrl));
+
 // DELETE /api/v1/profile/me — delete own account
 router.delete("/me", async (req, res, next) => {
   try {

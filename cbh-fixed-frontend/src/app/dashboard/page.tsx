@@ -64,9 +64,10 @@ function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => vo
 
 // ── Review modal ──────────────────────────────────────────────────────────────
 function ReviewModal({
-  businessId, businessName, onDone, onSkip,
+  businessId, businessName, conversationId, onDone, onSkip,
 }: {
   businessId: string; businessName: string;
+  conversationId: string;
   onDone: () => void; onSkip: () => void;
 }) {
   const [rating,     setRating]     = useState(0);
@@ -78,7 +79,7 @@ function ReviewModal({
     if (rating === 0) return;
     setSubmitting(true);
     try {
-      await createReview(businessId, { rating, comment: comment.trim() || undefined });
+      await createReview(businessId, { rating, comment: comment.trim() || undefined, conversation_id: conversationId });
       setDone(true);
       setTimeout(onDone, 1200);
     } catch { onDone(); }
@@ -155,7 +156,7 @@ useEffect(() => {
   const [deleting,     setDeleting]     = useState(false);
 
   // Review modal state
-  const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string } | null>(null);
+  const [reviewModal, setReviewModal] = useState<{ bizId: string; bizName: string; convId: string } | null>(null);
 
   // Settings fields
   const [sName,    setSName]    = useState("");
@@ -374,7 +375,7 @@ useEffect(() => {
         setSavedNames(prev => ({ ...prev, [bizId]: bizName }));
       }
       // Show review modal
-      setReviewModal({ bizId, bizName });
+      setReviewModal({ bizId, bizName, convId });
       // Refresh requests
       listMyRequests({ limit: 50 }).then(({ requests: reqs }) => setRequests(reqs)).catch(() => {});
     } catch {
@@ -401,6 +402,7 @@ useEffect(() => {
         <ReviewModal
           businessId={reviewModal.bizId}
           businessName={reviewModal.bizName}
+          conversationId={reviewModal.convId}
           onDone={() => setReviewModal(null)}
           onSkip={() => setReviewModal(null)}
         />

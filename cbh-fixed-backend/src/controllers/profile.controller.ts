@@ -56,4 +56,34 @@ export class ProfileController {
       next(err); 
     }
   }
+
+  async getNotifications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const service = new ProfileService(req.supabase);
+      const notifications = await service.getNotifications(req.user.id);
+      sendSuccess(res, notifications);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async markNotificationRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const service = new ProfileService(req.supabase);
+      const result = await service.markNotificationRead(req.user.id, req.params.id as string);
+      sendSuccess(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async markAllNotificationsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const service = new ProfileService(req.supabase);
+      const result = await service.markAllNotificationsRead(req.user.id);
+      sendSuccess(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
