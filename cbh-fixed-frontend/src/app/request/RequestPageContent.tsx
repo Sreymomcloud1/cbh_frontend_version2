@@ -6,6 +6,7 @@ import RequestForm from "@/components/request/RequestForm";
 import type { RequestPurpose, Supplier } from "@/types";
 import { mockSuppliers, categories as mockCategories } from "@/data/mockData";
 import { cn } from "@/lib/utils";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -264,10 +265,7 @@ export default function RequestPageContent() {
                   className="w-full bg-white border border-surface-200 hover:border-brand-400 rounded-2xl p-4 text-left transition-all hover:shadow-soft group">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-surface-100 shrink-0 overflow-hidden">
-                      {s.logo
-                        ? <img src={s.logo} alt={s.name} className="w-full h-full object-cover" />
-                        : <div className="w-full h-full flex items-center justify-center font-bold text-brand-600">{s.name[0]}</div>
-                      }
+                      <BusinessMedia fit="avatar" src={s.logo} alt={s.name} name={s.name} className="h-full w-full" avatarTextClassName="text-sm" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -334,10 +332,7 @@ export default function RequestPageContent() {
               <button key={s.id} onClick={() => selectSupplier(s)}
                 className="w-full bg-white border border-surface-200 hover:border-brand-300 rounded-2xl p-4 text-left transition-all hover:shadow-soft flex items-center gap-4 group">
                 <div className="w-12 h-12 rounded-xl overflow-hidden bg-surface-100 shrink-0">
-                  {s.logo
-                    ? <img src={s.logo} alt={s.name} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center text-lg font-bold text-brand-600">{s.name[0]}</div>
-                  }
+                  <BusinessMedia fit="avatar" src={s.logo} alt={s.name} name={s.name} className="h-full w-full" avatarTextClassName="text-lg" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">

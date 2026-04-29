@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, CheckCircle, Leaf, Package, Handshake, TrendingUp } from "lucide-react";
 import type { Supplier } from "@/types";
 import Button from "@/components/ui/Button";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import { ecoScoreBg, cn } from "@/lib/utils";
 import { freshSupplierHref } from "@/lib/data-events";
 
@@ -19,9 +20,13 @@ export default function SupplierCard({ supplier }: SupplierCardProps) {
     <div className="bg-white rounded-2xl border border-surface-200 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 overflow-hidden group flex flex-col">
       {/* Image */}
       <div className="relative h-44 overflow-hidden bg-surface-100">
-        <img
-        src={supplier.gallery[0] || supplier.logo || undefined}          alt={supplier.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        <BusinessMedia
+          fit="cover"
+          src={supplier.gallery[0] || supplier.logo}
+          alt={supplier.name}
+          name={supplier.name}
+          className="h-full w-full"
+          imgClassName="group-hover:scale-105 transition-transform duration-300"
         />
         <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
           {supplier.discountPercent && (
@@ -44,10 +49,15 @@ export default function SupplierCard({ supplier }: SupplierCardProps) {
           </span>
         </div>
         <div className="absolute bottom-3 left-3 w-9 h-9 rounded-xl border-2 border-white shadow-soft overflow-hidden bg-white">
-{supplier.logo
-  ? <img src={supplier.logo} alt={`${supplier.name} logo`} className="w-full h-full object-cover" />
-  : <div className="w-full h-full flex items-center justify-center text-xl font-bold text-brand-600 bg-brand-50">{supplier.name[0]}</div>
-}        </div>
+          <BusinessMedia
+            fit="avatar"
+            src={supplier.logo}
+            alt={`${supplier.name} logo`}
+            name={supplier.name}
+            className="h-full w-full rounded-xl bg-white"
+            avatarTextClassName="text-sm"
+          />
+        </div>
       </div>
 
       {/* Content */}

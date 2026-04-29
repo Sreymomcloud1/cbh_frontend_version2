@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Supplier, RequestPurpose } from "@/types";
 import Button from "@/components/ui/Button";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import { ecoScoreBg, ecoScoreLabel, cn } from "@/lib/utils";
 import RequestForm from "@/components/request/RequestForm";
 import { supabase } from "@/lib/supabase";
@@ -159,14 +160,20 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
           {/* Gallery */}
           <div className="space-y-3">
             <div className="rounded-2xl overflow-hidden h-72 sm:h-96 bg-surface-100">
-              <img src={supplier.gallery[activeImage] || supplier.logo} alt={supplier.name} className="w-full h-full object-cover" />
+              <BusinessMedia
+                fit="cover"
+                src={supplier.gallery[activeImage] || supplier.logo}
+                alt={supplier.name}
+                name={supplier.name}
+                className="h-full w-full"
+              />
             </div>
             {supplier.gallery.length > 1 && (
               <div className="flex gap-2">
                 {supplier.gallery.map((img, i) => (
                   <button key={i} onClick={() => setActiveImage(i)}
                     className={`w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${activeImage === i ? "border-brand-500" : "border-transparent opacity-60 hover:opacity-100"}`}>
-                    <img src={img} alt="" className="w-full h-full object-cover" />
+                    <BusinessMedia fit="avatar" src={img} alt="" name={supplier.name} className="h-full w-full" avatarTextClassName="text-sm" />
                   </button>
                 ))}
               </div>
@@ -176,7 +183,16 @@ export default function SupplierDetails({ supplier }: { supplier: Supplier }) {
 
           {/* Header */}
           <div className="flex items-start gap-4">
-            <img src={supplier.logo} alt={supplier.name} className="w-14 h-14 rounded-2xl border border-surface-200 object-cover shrink-0" />
+            <div className="w-14 h-14 rounded-2xl border border-surface-200 overflow-hidden shrink-0">
+              <BusinessMedia
+                fit="avatar"
+                src={supplier.logo}
+                alt={supplier.name}
+                name={supplier.name}
+                className="h-full w-full rounded-2xl"
+                avatarTextClassName="text-2xl"
+              />
+            </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-display text-2xl text-ink">{supplier.name}</h1>

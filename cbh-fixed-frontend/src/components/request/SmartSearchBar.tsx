@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { Sparkles, Loader2, Search } from "lucide-react";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -135,10 +136,7 @@ export default function SmartSearchBar({ onSelect }: Props) {
               <div className="flex items-start gap-3">
                 {/* Logo */}
                 <div className="w-10 h-10 rounded-xl bg-surface-100 shrink-0 overflow-hidden">
-                  {r.logo_url
-                    ? <img src={r.logo_url} alt={r.name} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center font-bold text-brand-600">{r.name[0]}</div>
-                  }
+                  <BusinessMedia fit="avatar" src={r.logo_url} alt={r.name} name={r.name} className="h-full w-full" avatarTextClassName="text-sm" />
                 </div>
 
                 {/* Details */}

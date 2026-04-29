@@ -22,6 +22,7 @@ import {
 import { cn, formatDate, statusBadge, purposeColor, ecoScoreBg } from "@/lib/utils";
 import MessagingInbox from "@/components/messaging/MessagingInbox";
 import EcoScoreQuestionnaire from "@/components/eco/EcoScoreQuestionnaire";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import type { Supplier, QuoteRequest } from "@/types";
 import { Suspense } from "react";
 import Link from "next/link";
@@ -79,20 +80,27 @@ function SupplierCard({ biz }: { biz: Supplier }) {
   return (
     <div className="bg-white rounded-2xl border border-surface-200 shadow-soft overflow-hidden max-w-xs">
       <div className="h-44 bg-surface-100 relative overflow-hidden">
-        {(biz.gallery?.[0] || biz.logo)
-          ? <img src={biz.gallery?.[0] || biz.logo} alt={biz.name} className="w-full h-full object-cover" />
-          : <div className="w-full h-full flex items-center justify-center text-4xl text-ink-faint">🏢</div>
-        }
+        <BusinessMedia
+          fit="cover"
+          src={biz.gallery?.[0] || biz.logo}
+          alt={biz.name}
+          name={biz.name}
+          className="h-full w-full"
+        />
         <div className="absolute top-3 right-3">
           <span className={cn("text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1", ecoScoreBg(biz.ecoScore.overall))}>
             <Leaf className="w-3 h-3" /> {biz.ecoScore.overall}
           </span>
         </div>
         <div className="absolute bottom-3 left-3 w-9 h-9 rounded-xl bg-white border border-surface-200 overflow-hidden shadow-soft">
-          {biz.logo
-            ? <img src={biz.logo} alt="" className="w-full h-full object-cover" />
-            : <div className="w-full h-full flex items-center justify-center font-bold text-brand-600 text-sm">{biz.name[0]}</div>
-          }
+          <BusinessMedia
+            fit="avatar"
+            src={biz.logo}
+            alt=""
+            name={biz.name}
+            className="h-full w-full rounded-xl bg-white"
+            avatarTextClassName="text-sm"
+          />
         </div>
       </div>
       <div className="p-4 space-y-1">
@@ -396,10 +404,7 @@ function BusinessDashboardInner() {
         <aside className="hidden md:flex flex-col w-52 shrink-0">
           <div className="flex items-center gap-3 mb-6 px-3">
             <div className="w-10 h-10 rounded-xl bg-surface-100 overflow-hidden shrink-0 border border-surface-200">
-              {logoUrl
-                ? <img src={logoUrl} alt="" className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center font-bold text-brand-600">{eName[0]}</div>
-              }
+              <BusinessMedia fit="avatar" src={logoUrl} alt="" name={eName} className="h-full w-full rounded-xl" avatarTextClassName="text-sm" />
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-ink text-sm truncate">{eName}</p>
@@ -536,10 +541,14 @@ function BusinessDashboardInner() {
                     <div className="flex items-center gap-4 pt-4">
                       <div className="relative shrink-0">
                         <div className="w-16 h-16 rounded-2xl bg-surface-100 overflow-hidden border border-surface-200">
-                          {logoUrl
-                            ? <img src={logoUrl} alt="" className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-brand-600">{eName[0]}</div>
-                          }
+                          <BusinessMedia
+                            fit="avatar"
+                            src={logoUrl}
+                            alt=""
+                            name={eName}
+                            className="h-full w-full rounded-2xl"
+                            avatarTextClassName="text-2xl"
+                          />
                         </div>
                         <button onClick={() => logoRef.current?.click()} disabled={logoUploading}
                           className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-white shadow hover:bg-brand-700 transition-colors disabled:opacity-50">
