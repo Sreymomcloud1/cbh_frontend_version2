@@ -552,7 +552,7 @@ export default function AdminPage() {
     notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
     setTab("businesses");
     router.replace("/admin");
-    showToast("Business added and published ✓", true);
+    showToast("Business added — pending verification.", true);
     setShowAddBiz(false);
     setAddBizForm({
       name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
@@ -1049,7 +1049,7 @@ export default function AdminPage() {
         </button>
         <button onClick={handleAddBusiness} disabled={addBizSaving}
           className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50">
-          {addBizSaving ? "Adding…" : "Add & Publish"}
+          {addBizSaving ? "Adding…" : "Add business"}
         </button>
       </div>
     </div>
