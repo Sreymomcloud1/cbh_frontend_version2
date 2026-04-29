@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cbh-backend
+    runtime: node
+    plan: starter
+    buildCommand: cd cbh-fixed-backend && npm ci && npm run build
+    startCommand: cd cbh-fixed-backend && node dist/index.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      # Set the rest in Render dashboard:
+      # SUPABASE_URL
+      # SUPABASE_ANON_KEY
+      # SUPABASE_SERVICE_ROLE_KEY
+      # ALLOWED_ORIGINS
+      # ADMIN_EMAILS
+      # SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM
+      # CONTACT_EMAIL
+      # SUPABASE_STORAGE_BUCKET / AVATAR_BUCKET / MAX_FILE_SIZE_MB
+      # NEXT_PUBLIC_SITE_URL

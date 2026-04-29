@@ -81,3 +81,11 @@ Must target the matching backend:
 4. Admin verify/reject/revoke updates status and messages.
 5. Email links and redirects use correct `NEXT_PUBLIC_SITE_URL`.
 
+## Local Team Sharing via Cloudflare Tunnel
+
+- Start apps: `bash ./start-dev.sh`
+- Start tunnels: `bash ./share-local-cloudflare.sh`
+- Backend now supports tunnel-friendly CORS via:
+  - `ALLOW_TRYCLOUDFLARE_ORIGINS=true` (testing/local only)
+  - `ALLOWED_ORIGINS` for explicit static origins
+

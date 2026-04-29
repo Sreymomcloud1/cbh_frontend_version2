@@ -62,6 +62,17 @@ export async function getAccessToken(): Promise<string | null> {
   return _cachedToken;
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) {
+    clearTokenCache();
+    return null;
+  }
+  _cachedToken = data.session?.access_token ?? null;
+  _initialized = true;
+  return _cachedToken;
+}
+
 export function clearTokenCache() {
   _cachedToken  = null;
   _initialized  = false;
