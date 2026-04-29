@@ -73,7 +73,6 @@ supabase.auth.onAuthStateChange((_event, session) => {
 });
 
 export async function getAccessToken(): Promise<string | null> {
-  if (!hasSupabaseEnv) return null;
   // If we've already seen an auth event, return cache directly (no storage read)
   if (_initialized) {
     if (_cachedToken && tokenNeedsRefresh(_cachedToken)) {

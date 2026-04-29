@@ -22,8 +22,19 @@ import type {
   UpdateConversationStatusPayload,
 } from "@/types";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+/**
+ * Normalize NEXT_PUBLIC_API_URL so uploads and API calls work when the env is set to
+ * the bare backend origin (e.g. https://service.onrender.com) without `/api/v1`.
+ */
+export function getApiBaseUrl(): string {
+  const fallback = "http://localhost:4000/api/v1";
+  const raw = (process.env.NEXT_PUBLIC_API_URL ?? fallback).trim().replace(/\/+$/, "");
+  if (/\/api\/v1$/i.test(raw)) return raw;
+  if (!/\/api\//i.test(raw)) return `${raw}/api/v1`;
+  return raw;
+}
+
+const BASE_URL = getApiBaseUrl();
 const REQUEST_TIMEOUT_MS = 15000;
 const RATE_LIMIT_RETRY_MS = 1200;
 const MAX_RATE_LIMIT_RETRIES = 1;
@@ -488,25 +499,41 @@ async function uploadFile(
   file: File,
   extraFields?: Record<string, string>
 ): Promise<{ url: string; gallery_urls?: string[] }> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error("Not authenticated");
-
   const form = new FormData();
   form.append("file", file);
   if (extraFields) {
     Object.entries(extraFields).forEach(([k, v]) => form.append(k, v));
   }
 
-  const res = await fetchWithTimeout(`${BASE_URL}/upload/${endpoint}`, {
+  let token = await getAccessToken();
+  if (!token) throw new Error("Not authenticated");
+
+  const url = `${BASE_URL}/upload/${endpoint}`;
+  let res = await fetchWithTimeout(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
 
-  const json = await res.json();
-  if (!res.ok) throw new Error(json?.error?.message ?? `Upload failed: ${res.status}`);
-  return json.data;
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) throw new Error("Not authenticated");
+    token = refreshed;
+    res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+  }
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (json as any)?.error?.message ?? `Upload failed: ${res.status}`
+    );
+  }
+  return json.data as { url: string; gallery_urls?: string[] };
 }
 
 export async function uploadAvatar(file: File): Promise<string> {

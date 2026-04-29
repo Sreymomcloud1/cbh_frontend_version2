@@ -1,15 +1,13 @@
 "use client";
 import { useState, useRef } from "react";
 import { Camera, Loader2, CheckCircle, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { uploadAvatar } from "@/lib/api";
 
 interface Props {
   currentUrl: string | null;
   name: string;
   onUploaded: (newUrl: string) => void; // called after successful upload
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 export default function AvatarUpload({ currentUrl, name, onUploaded }: Props) {
   const [preview,  setPreview]  = useState<string | null>(currentUrl);
@@ -42,24 +40,7 @@ export default function AvatarUpload({ currentUrl, name, onUploaded }: Props) {
     setErrorMsg("");
 
     try {
-      // Get current session token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not logged in");
-
-      // Upload via backend (which pushes to Supabase Storage)
-      const form = new FormData();
-      form.append("file", file);
-
-      const res = await fetch(`${API_URL}/upload/avatar`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: form,
-      });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
-
-      const newUrl: string = json.data.url;
+      const newUrl = await uploadAvatar(file);
       setPreview(newUrl);
       setStatus("done");
       onUploaded(newUrl);
