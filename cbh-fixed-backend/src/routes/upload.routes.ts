@@ -36,10 +36,11 @@ router.post("/avatar", requireAuth, upload.single("file"), async (req, res, next
       req.file
     );
 
-    await req.supabase
+    const { error: profileUpdateErr } = await req.supabase
       .from("profiles")
       .update({ avatar_url: result.url, updated_at: new Date().toISOString() })
       .eq("id", req.user.id);
+    if (profileUpdateErr) throw profileUpdateErr;
 
     sendSuccess(res, { url: result.url }, 201);
   } catch (err) { next(err); }
@@ -80,10 +81,11 @@ router.post("/business-logo", requireAuth, upload.single("file"), async (req, re
       req.file
     );
 
-    await req.supabase
+    const { error: logoUpdateErr } = await req.supabase
       .from("businesses")
       .update({ logo_url: result.url, updated_at: new Date().toISOString() })
       .eq("id", business_id);
+    if (logoUpdateErr) throw logoUpdateErr;
 
     sendSuccess(res, { url: result.url }, 201);
   } catch (err) { next(err); }
@@ -128,10 +130,11 @@ router.post("/business-gallery", requireAuth, upload.single("file"), async (req,
     const existingGallery: string[] = (biz as any).gallery_urls ?? [];
     const updatedGallery = [...existingGallery, result.url];
 
-    await req.supabase
+    const { error: galleryUpdateErr } = await req.supabase
       .from("businesses")
       .update({ gallery_urls: updatedGallery, updated_at: new Date().toISOString() })
       .eq("id", business_id);
+    if (galleryUpdateErr) throw galleryUpdateErr;
 
     sendSuccess(res, { url: result.url, gallery_urls: updatedGallery }, 201);
   } catch (err) { next(err); }

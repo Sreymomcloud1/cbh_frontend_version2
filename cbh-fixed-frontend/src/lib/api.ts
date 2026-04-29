@@ -219,23 +219,26 @@ export function requestToQuote(r: any): QuoteRequest {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function apiConversationToConversation(c: any): Conversation {
+  const buyerId = c.buyer?.id ?? c.buyer_id;
   return {
     id: c.id,
     requestId: c.request?.id ?? c.request_id,
     supplierId: c.business?.id ?? c.business_id,
     supplierName: c.business?.name ?? "",
     supplierLogo: c.business?.logo_url ?? undefined,
-    buyerId: c.buyer?.id ?? c.buyer_id,
+    buyerId,
     buyerName: c.buyer?.name ?? "",
     purpose: c.request?.purpose ?? "buy",
     product: c.request?.product ?? "",
     status: c.status,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     messages: (c.messages ?? []).map((m: any) => ({
-      id: m.id,
+      // Backend returns sender_id in list responses and sender.id in detail responses.
+      // Use buyerId match to decide whether each message is buyer-side or business-side.
       senderId: m.sender?.id ?? m.sender_id,
+      id: m.id,
       senderName: m.sender?.name ?? "",
-      senderRole: "buyer" as const,
+      senderRole: (m.sender?.id ?? m.sender_id) === buyerId ? "buyer" as const : "business" as const,
       content: m.content,
       timestamp: m.created_at,
       read: m.is_read ?? false,
