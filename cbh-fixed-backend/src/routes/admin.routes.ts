@@ -1,7 +1,9 @@
 import { Router } from "express";
+import multer from "multer";
 import { requireAuth, requireAdmin } from "@/middleware/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendSuccess, sendError } from "@/lib/response";
+import { uploadImage } from "@/services/upload.service";
 import { z } from "zod";
 import { validate } from "@/middleware/validate";
 import { randomBytes } from "node:crypto";
@@ -570,6 +572,73 @@ async function resolveOwnerIdForAdminCreate(
 
   return { ownerId: userId, invitedNewOwner: true, pendingInvitePassword: password };
 }
+
+const adminImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: (env.MAX_FILE_SIZE_MB ?? 5) * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.mimetype)) {
+      cb(new Error("Only JPEG, PNG, WEBP, and GIF images are allowed"));
+    } else {
+      cb(null, true);
+    }
+  },
+});
+
+// POST /api/v1/admin/uploads/business-logo — admin-only; returns public URL for manual business create
+router.post(
+  "/uploads/business-logo",
+  adminImageUpload.single("file"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        sendError(res, 400, "No file provided", "BAD_REQUEST");
+        return;
+      }
+      const adminId = req.user?.id;
+      if (!adminId) {
+        sendError(res, 401, "Not authenticated", "UNAUTHORIZED");
+        return;
+      }
+      const result = await uploadImage(
+        env.SUPABASE_STORAGE_BUCKET ?? "business-assets",
+        `admin-manual/logos/${adminId}`,
+        req.file,
+      );
+      sendSuccess(res, { url: result.url }, 201);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /api/v1/admin/uploads/business-gallery — one image per request; compose gallery on the client before create
+router.post(
+  "/uploads/business-gallery",
+  adminImageUpload.single("file"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        sendError(res, 400, "No file provided", "BAD_REQUEST");
+        return;
+      }
+      const adminId = req.user?.id;
+      if (!adminId) {
+        sendError(res, 401, "Not authenticated", "UNAUTHORIZED");
+        return;
+      }
+      const result = await uploadImage(
+        env.SUPABASE_STORAGE_BUCKET ?? "business-assets",
+        `admin-manual/gallery/${adminId}`,
+        req.file,
+      );
+      sendSuccess(res, { url: result.url }, 201);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // POST /api/v1/admin/businesses/create — admin manually adds a business
 router.post("/businesses/create", validate(createBusinessSchema), async (req, res, next) => {

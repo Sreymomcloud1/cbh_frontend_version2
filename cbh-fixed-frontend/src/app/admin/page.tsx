@@ -1,12 +1,12 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShieldCheck, Search, LogOut, Home, Users, Building2,
   BarChart3, CheckCircle, XCircle, Clock, RefreshCw,
   ChevronDown, ChevronUp, AlertCircle, Loader2, Eye,
   RotateCcw, X, Mail, Phone, Globe, Facebook, Send,
-  FileText, Star, Leaf, MapPin,
+  FileText, Star, Leaf, MapPin, Camera,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/supabase";
@@ -104,6 +104,44 @@ async function adminFetch(path: string, options: RequestInit = {}) {
         Authorization: `Bearer ${accessToken}`,
         ...(options.headers ?? {}),
       },
+    });
+
+  let res = await doFetch(token);
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) {
+      await supabase.auth.signOut();
+      if (typeof window !== "undefined") window.location.href = "/auth/login";
+      return { success: false, error: { message: "Session expired. Please log in again." } };
+    }
+    token = refreshed;
+    res = await doFetch(token);
+    if (res.status === 401) {
+      await supabase.auth.signOut();
+      if (typeof window !== "undefined") window.location.href = "/auth/login";
+      return { success: false, error: { message: "Session expired. Please log in again." } };
+    }
+  }
+
+  return res.json();
+}
+
+const MAX_ADMIN_GALLERY = 8;
+
+/** Multipart uploads (omit Content-Type so the browser sets the boundary). */
+async function adminFetchMultipart(path: string, formData: FormData): Promise<{ success: boolean; data?: { url: string }; error?: { message?: string } }> {
+  let token = await getAccessToken();
+  if (!token) {
+    if (typeof window !== "undefined") window.location.href = "/auth/login";
+    return { success: false, error: { message: "Not authenticated" } };
+  }
+
+  const doFetch = async (accessToken: string) =>
+    fetch(`${API}${path}`, {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
   let res = await doFetch(token);
@@ -433,8 +471,6 @@ export default function AdminPage() {
     location_city: "",
     location_detail: "",
     map_url: "",
-    logo_url: "",
-    gallery_urls: "",
     eco_description: "",
     discount_percent: "",
     bulk_support: false,
@@ -459,6 +495,34 @@ export default function AdminPage() {
   });
 
   const [addBizSaving, setAddBizSaving] = useState(false);
+  const [addBizLogoFile, setAddBizLogoFile] = useState<File | null>(null);
+  const [addBizLogoPreview, setAddBizLogoPreview] = useState("");
+  const [addBizGalleryFiles, setAddBizGalleryFiles] = useState<File[]>([]);
+  const [addBizGalleryPreviews, setAddBizGalleryPreviews] = useState<string[]>([]);
+  const addBizLogoInputRef = useRef<HTMLInputElement>(null);
+  const addBizGalleryInputRef = useRef<HTMLInputElement>(null);
+
+  const resetAddBizUploadFields = useCallback(() => {
+    setAddBizLogoPreview(prev => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return "";
+    });
+    setAddBizGalleryPreviews(prev => {
+      prev.forEach(u => {
+        if (u.startsWith("blob:")) URL.revokeObjectURL(u);
+      });
+      return [];
+    });
+    setAddBizLogoFile(null);
+    setAddBizGalleryFiles([]);
+    if (addBizLogoInputRef.current) addBizLogoInputRef.current.value = "";
+    if (addBizGalleryInputRef.current) addBizGalleryInputRef.current.value = "";
+  }, []);
+
+  const closeAddBizModal = useCallback(() => {
+    resetAddBizUploadFields();
+    setShowAddBiz(false);
+  }, [resetAddBizUploadFields]);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -470,6 +534,48 @@ export default function AdminPage() {
       .split(",")
       .map(v => v.trim())
       .filter(Boolean);
+
+  const handleAddBizLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAddBizLogoPreview(prev => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setAddBizLogoFile(file);
+  };
+
+  const clearAddBizLogo = () => {
+    setAddBizLogoPreview(prev => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return "";
+    });
+    setAddBizLogoFile(null);
+    if (addBizLogoInputRef.current) addBizLogoInputRef.current.value = "";
+  };
+
+  const handleAddBizGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_ADMIN_GALLERY);
+    e.target.value = "";
+    if (!files.length) return;
+    setAddBizGalleryPreviews(prev => {
+      prev.forEach(u => {
+        if (u.startsWith("blob:")) URL.revokeObjectURL(u);
+      });
+      return files.map(f => URL.createObjectURL(f));
+    });
+    setAddBizGalleryFiles(files);
+  };
+
+  const removeAddBizGalleryAt = (index: number) => {
+    setAddBizGalleryPreviews(prev => {
+      const url = prev[index];
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      return prev.filter((_, i) => i !== index);
+    });
+    setAddBizGalleryFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
 
   // Guard: admin only
@@ -553,91 +659,127 @@ export default function AdminPage() {
   };
 
   const handleAddBusiness = async () => {
-  if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email || !addBizForm.contact_phone || !addBizForm.location_city) {
-    showToast("Name, category, city, email and phone are required.", false); return;
-  }
-  const fb = addBizForm.facebook_url.trim();
-  if (!fb) {
-    showToast("Facebook Page URL is required.", false); return;
-  }
-  try {
-    // Ensures admins paste a usable link before POST (backend also validates)
-    void new URL(fb.startsWith("http") ? fb : `https://${fb}`);
-  } catch {
-    showToast("Enter a valid Facebook Page URL (including https://).", false); return;
-  }
-  setAddBizSaving(true);
-  const payload = {
-    name: addBizForm.name.trim(),
-    tagline: addBizForm.tagline.trim() || undefined,
-    description: addBizForm.description.trim() || undefined,
-    category: addBizForm.category,
-    tier: addBizForm.tier,
-    sub_categories: toArray(addBizForm.sub_categories),
-    location_city: addBizForm.location_city.trim(),
-    location_detail: addBizForm.location_detail.trim() || undefined,
-    map_url: addBizForm.map_url.trim() || undefined,
-    logo_url: addBizForm.logo_url.trim() || undefined,
-    gallery_urls: toArray(addBizForm.gallery_urls),
-    eco_description: addBizForm.eco_description.trim() || undefined,
-    discount_percent: addBizForm.discount_percent ? Number(addBizForm.discount_percent) : undefined,
-    bulk_support: addBizForm.bulk_support,
-    bulk_capacity: addBizForm.bulk_capacity.trim() || undefined,
-    tags: toArray(addBizForm.tags),
-    services: toArray(addBizForm.services),
-    contact_email: addBizForm.contact_email.trim(),
-    contact_phone: addBizForm.contact_phone.trim(),
-    tax_id: addBizForm.tax_id.trim() || undefined,
-    facebook_url: addBizForm.facebook_url.trim(),
-    telegram_url: addBizForm.telegram_url.trim() || undefined,
-    website_url: addBizForm.website_url.trim() || undefined,
-    open_for_collaboration: addBizForm.open_for_collaboration,
-    collaboration_types: toArray(addBizForm.collaboration_types),
-    collaboration_description: addBizForm.collaboration_description.trim() || undefined,
-    open_for_investment: addBizForm.open_for_investment,
-    investment_amount: addBizForm.investment_amount.trim() || undefined,
-    investment_description: addBizForm.investment_description.trim() || undefined,
-    founded_year: addBizForm.founded_year ? Number(addBizForm.founded_year) : undefined,
-    notify_by_email: addBizForm.notify_by_email,
-    notify_by_phone: addBizForm.notify_by_phone,
-  };
-  const res = await adminFetch("/admin/businesses/create", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  setAddBizSaving(false);
-  if (res.success) {
-    notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
-    setTab("businesses");
-    router.replace("/admin");
-    const emailed = Boolean(res.data?.ownerCredentialsEmailed);
-    const emailErr = res.data?.ownerCredentialsEmailError as string | undefined;
-    const contact = payload.contact_email;
-    if (emailErr) {
-      showToast(
-        `Business added (pending verification), but login email failed: ${emailErr}. The owner can use “Forgot password” for ${contact}.`,
-        false,
-      );
-    } else if (emailed) {
-      showToast(`Business added — pending verification. Login details were sent to ${contact}.`, true);
-    } else {
-      showToast("Business added — pending verification.", true);
+    if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email || !addBizForm.contact_phone || !addBizForm.location_city) {
+      showToast("Name, category, city, email and phone are required.", false);
+      return;
     }
-    setShowAddBiz(false);
-    setAddBizForm({
-      name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
-      location_city: "", location_detail: "", map_url: "", logo_url: "", gallery_urls: "",
-      eco_description: "", discount_percent: "", bulk_support: false, bulk_capacity: "", tags: "", services: "",
-      contact_email: "", contact_phone: "", tax_id: "", facebook_url: "", telegram_url: "", website_url: "",
-      open_for_collaboration: false, collaboration_types: "", collaboration_description: "",
-      open_for_investment: false, investment_amount: "", investment_description: "", founded_year: "",
-      notify_by_email: true, notify_by_phone: false,
-    });
-    loadAll();
-  } else {
-    showToast(res.error?.message ?? "Failed to add business.", false);
-  }
-};
+    const fb = addBizForm.facebook_url.trim();
+    if (!fb) {
+      showToast("Facebook Page URL is required.", false);
+      return;
+    }
+    try {
+      void new URL(fb.startsWith("http") ? fb : `https://${fb}`);
+    } catch {
+      showToast("Enter a valid Facebook Page URL (including https://).", false);
+      return;
+    }
+
+    setAddBizSaving(true);
+    let logoPublicUrl: string | undefined;
+    const galleryPublicUrls: string[] = [];
+
+    try {
+      if (addBizLogoFile) {
+        const fd = new FormData();
+        fd.append("file", addBizLogoFile);
+        const logoRes = await adminFetchMultipart("/admin/uploads/business-logo", fd);
+        if (!logoRes.success) {
+          showToast(logoRes.error?.message ?? "Logo upload failed.", false);
+          return;
+        }
+        logoPublicUrl = logoRes.data?.url;
+      }
+
+      for (const file of addBizGalleryFiles) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const gRes = await adminFetchMultipart("/admin/uploads/business-gallery", fd);
+        if (!gRes.success) {
+          showToast(gRes.error?.message ?? "Photo upload failed.", false);
+          return;
+        }
+        if (gRes.data?.url) galleryPublicUrls.push(gRes.data.url);
+      }
+
+      const payload = {
+        name: addBizForm.name.trim(),
+        tagline: addBizForm.tagline.trim() || undefined,
+        description: addBizForm.description.trim() || undefined,
+        category: addBizForm.category,
+        tier: addBizForm.tier,
+        sub_categories: toArray(addBizForm.sub_categories),
+        location_city: addBizForm.location_city.trim(),
+        location_detail: addBizForm.location_detail.trim() || undefined,
+        map_url: addBizForm.map_url.trim() || undefined,
+        logo_url: logoPublicUrl,
+        gallery_urls: galleryPublicUrls,
+        eco_description: addBizForm.eco_description.trim() || undefined,
+        discount_percent: addBizForm.discount_percent ? Number(addBizForm.discount_percent) : undefined,
+        bulk_support: addBizForm.bulk_support,
+        bulk_capacity: addBizForm.bulk_capacity.trim() || undefined,
+        tags: toArray(addBizForm.tags),
+        services: toArray(addBizForm.services),
+        contact_email: addBizForm.contact_email.trim(),
+        contact_phone: addBizForm.contact_phone.trim(),
+        tax_id: addBizForm.tax_id.trim() || undefined,
+        facebook_url: addBizForm.facebook_url.trim(),
+        telegram_url: addBizForm.telegram_url.trim() || undefined,
+        website_url: addBizForm.website_url.trim() || undefined,
+        open_for_collaboration: addBizForm.open_for_collaboration,
+        collaboration_types: toArray(addBizForm.collaboration_types),
+        collaboration_description: addBizForm.collaboration_description.trim() || undefined,
+        open_for_investment: addBizForm.open_for_investment,
+        investment_amount: addBizForm.investment_amount.trim() || undefined,
+        investment_description: addBizForm.investment_description.trim() || undefined,
+        founded_year: addBizForm.founded_year ? Number(addBizForm.founded_year) : undefined,
+        notify_by_email: addBizForm.notify_by_email,
+        notify_by_phone: addBizForm.notify_by_phone,
+      };
+
+      const res = await adminFetch("/admin/businesses/create", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (res.success) {
+        notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
+        setTab("businesses");
+        router.replace("/admin");
+        const emailed = Boolean(res.data?.ownerCredentialsEmailed);
+        const emailErr = res.data?.ownerCredentialsEmailError as string | undefined;
+        const contact = payload.contact_email;
+        if (emailErr) {
+          showToast(
+            `Business added (pending verification), but login email failed: ${emailErr}. The owner can use “Forgot password” for ${contact}.`,
+            false,
+          );
+        } else if (emailed) {
+          showToast(`Business added — pending verification. Login details were sent to ${contact}.`, true);
+        } else {
+          showToast("Business added — pending verification.", true);
+        }
+        setShowAddBiz(false);
+        resetAddBizUploadFields();
+        setAddBizForm({
+          name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
+          location_city: "", location_detail: "", map_url: "",
+          eco_description: "", discount_percent: "", bulk_support: false, bulk_capacity: "", tags: "", services: "",
+          contact_email: "", contact_phone: "", tax_id: "", facebook_url: "", telegram_url: "", website_url: "",
+          open_for_collaboration: false, collaboration_types: "", collaboration_description: "",
+          open_for_investment: false, investment_amount: "", investment_description: "", founded_year: "",
+          notify_by_email: true, notify_by_phone: false,
+        });
+        loadAll();
+      } else {
+        showToast(res.error?.message ?? "Failed to add business.", false);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Something went wrong.", false);
+    } finally {
+      setAddBizSaving(false);
+    }
+  };
 
   const updateUserRole = async (userId: string, role: string) => {
     setActionId(userId);
@@ -1016,7 +1158,7 @@ export default function AdminPage() {
     <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-semibold text-white">Add Business Manually</h2>
-        <button onClick={() => setShowAddBiz(false)} className="text-stone-400 hover:text-white">✕</button>
+        <button type="button" onClick={closeAddBizModal} className="text-stone-400 hover:text-white">✕</button>
       </div>
       <div className="space-y-3">
         {[
@@ -1030,8 +1172,6 @@ export default function AdminPage() {
           { label: "City *",             key: "location_city",  ph: "Phnom Penh"                   },
           { label: "Location Detail",    key: "location_detail",ph: "BKK1, Phnom Penh"             },
           { label: "Google Map URL",     key: "map_url",        ph: "https://maps.google.com/..."  },
-          { label: "Logo URL",           key: "logo_url",       ph: "https://..."                   },
-          { label: "Gallery URLs",       key: "gallery_urls",   ph: "https://a.jpg, https://b.jpg" },
           { label: "Subcategories",      key: "sub_categories", ph: "Organic, Catering, Vegan"      },
           { label: "Services",           key: "services",       ph: "Event catering, Delivery"      },
           { label: "Tags",               key: "tags",           ph: "eco, local, zero-waste"        },
@@ -1050,6 +1190,82 @@ export default function AdminPage() {
               className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500 placeholder:text-stone-600" />
           </div>
         ))}
+        <div className="rounded-xl border border-stone-700 bg-stone-800/50 p-4 space-y-3">
+          <p className="text-xs font-semibold text-stone-400">Logo & profile photos</p>
+          <input
+            ref={addBizLogoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAddBizLogoChange}
+          />
+          <input
+            ref={addBizGalleryInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={handleAddBizGalleryChange}
+          />
+          <div>
+            <label className="block text-[11px] font-semibold text-stone-400 mb-2">Logo</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="w-14 h-14 rounded-xl border border-stone-600 bg-stone-800 overflow-hidden shrink-0 flex items-center justify-center">
+                {addBizLogoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={addBizLogoPreview} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <Camera className="w-5 h-5 text-stone-600" />
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => addBizLogoInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-600 bg-stone-800 text-xs text-stone-200 hover:bg-stone-700"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  {addBizLogoFile ? "Replace" : "Upload"} logo
+                </button>
+                {addBizLogoFile && (
+                  <button type="button" onClick={clearAddBizLogo} className="text-xs text-red-400 hover:text-red-300">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-stone-400 mb-1">Business profile photos</label>
+            <p className="text-[10px] text-stone-500 mb-2">Up to {MAX_ADMIN_GALLERY} images. Choosing new files replaces the current selection.</p>
+            <button
+              type="button"
+              onClick={() => addBizGalleryInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-600 bg-stone-800 text-xs text-stone-200 hover:bg-stone-700"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              {addBizGalleryFiles.length ? `Change photos (${addBizGalleryFiles.length})` : "Upload profile photos"}
+            </button>
+            {addBizGalleryPreviews.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {addBizGalleryPreviews.map((url, i) => (
+                  <div key={`${url}-${i}`} className="relative w-14 h-14 rounded-lg overflow-hidden border border-stone-600">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeAddBizGalleryAt(i)}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded bg-black/60 text-white text-xs leading-5 hover:bg-black/80"
+                      aria-label="Remove photo"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         <div>
           <label className="block text-xs font-semibold text-stone-400 mb-1">Category *</label>
           <select value={addBizForm.category}
@@ -1118,7 +1334,7 @@ export default function AdminPage() {
         </div>
       </div>
       <div className="flex gap-3 mt-5">
-        <button onClick={() => setShowAddBiz(false)}
+        <button type="button" onClick={closeAddBizModal}
           className="flex-1 py-2 rounded-xl border border-stone-700 text-stone-300 text-sm hover:bg-stone-800">
           Cancel
         </button>
