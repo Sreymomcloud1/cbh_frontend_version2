@@ -142,6 +142,7 @@ function BusinessDashboardInner() {
   const [eNotify,  setENotify]  = useState(true);
   const [logoUrl,  setLogoUrl]  = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
+  const logoUploadingRef = useRef(false);
   const [eSaving,  setESaving]  = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -157,6 +158,10 @@ function BusinessDashboardInner() {
 
   const logoRef = useRef<HTMLInputElement>(null);
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
+
+  useEffect(() => {
+    logoUploadingRef.current = logoUploading;
+  }, [logoUploading]);
 
   const fetchUnread = useCallback(async () => {
     try {
@@ -215,11 +220,15 @@ function BusinessDashboardInner() {
 
   useEffect(() => {
     const unsubscribe = onBusinessDataChanged(load);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (logoUploadingRef.current) return;
+      load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       unsubscribe();
-      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [load]);
 
@@ -234,8 +243,10 @@ function BusinessDashboardInner() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !biz) return;
+    const input = e.target;
     setLogoUrl(URL.createObjectURL(file));
     setLogoUploading(true);
+    logoUploadingRef.current = true;
     try {
       const token = await getAccessToken();
       const form  = new FormData();
@@ -256,6 +267,8 @@ function BusinessDashboardInner() {
       showToast(err instanceof Error ? err.message : "Logo upload failed.", false);
     } finally {
       setLogoUploading(false);
+      logoUploadingRef.current = false;
+      input.value = "";
     }
   };
 

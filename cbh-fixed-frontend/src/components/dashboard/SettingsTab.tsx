@@ -52,6 +52,8 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const input = e.target;
+
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!allowed.includes(file.type)) { setProfileError("Only JPEG, PNG, WEBP or GIF images allowed."); return; }
     if (file.size > 5 * 1024 * 1024)  { setProfileError("Image must be under 5 MB."); return; }
@@ -76,6 +78,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
       setAvatarPreview(user.avatar ?? "");
     } finally {
       setAvatarUploading(false);
+      input.value = "";
     }
   };
 
@@ -174,7 +177,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
                 className="w-full h-full object-cover"
               />
             </div>
-            <button onClick={() => fileInputRef.current?.click()} disabled={avatarUploading}
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={avatarUploading}
               className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center text-white shadow transition-colors disabled:opacity-50"
               title="Change photo">
               {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
@@ -182,7 +185,7 @@ export default function SettingsTab({ user, onUpdate, onLogout }: Props) {
           </div>
           <div>
             <p className="text-sm font-medium text-ink">Profile Photo</p>
-            <button onClick={() => fileInputRef.current?.click()} disabled={avatarUploading}
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={avatarUploading}
               className="text-xs text-brand-600 hover:underline mt-0.5 disabled:opacity-50">
               {avatarUploading ? "Uploading…" : "Change photo"}
             </button>

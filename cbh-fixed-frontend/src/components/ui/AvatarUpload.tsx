@@ -20,6 +20,7 @@ export default function AvatarUpload({ currentUrl, name, onUploaded }: Props) {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.target;
 
     // Validate type and size client-side first
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -50,6 +51,8 @@ export default function AvatarUpload({ currentUrl, name, onUploaded }: Props) {
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Upload failed");
       setStatus("error");
+    } finally {
+      input.value = "";
     }
   };
 

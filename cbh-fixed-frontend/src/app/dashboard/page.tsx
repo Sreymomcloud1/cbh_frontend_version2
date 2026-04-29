@@ -195,7 +195,13 @@ useEffect(() => {
   const [showPw,   setShowPw]   = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  /** Prevents reload-on-return from racing file picker closing (focus/visibility quirks). */
+  const avatarUploadingRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    avatarUploadingRef.current = avatarUploading;
+  }, [avatarUploading]);
 
   const showToast = (msg: string, ok: boolean) => setToast({ msg, ok });
 
@@ -247,11 +253,17 @@ useEffect(() => {
 
   useEffect(() => {
     const unsubscribe = onBusinessDataChanged(load);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
+    // Do not use window "focus": closing the file picker refocuses the page and used to fire
+    // load() immediately, wiping in-flight avatar upload state / full-page loading shimmer.
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (avatarUploadingRef.current) return;
+      load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       unsubscribe();
-      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [load]);
 
@@ -304,9 +316,11 @@ useEffect(() => {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.target;
     const localUrl = URL.createObjectURL(file);
     setAvatarUrl(localUrl);
     setAvatarUploading(true);
+    avatarUploadingRef.current = true;
     try {
       const fresh = await uploadAvatar(file);
       setAvatarUrl(fresh);
@@ -318,6 +332,8 @@ useEffect(() => {
     } finally {
       URL.revokeObjectURL(localUrl);
       setAvatarUploading(false);
+      avatarUploadingRef.current = false;
+      input.value = "";
     }
   };
 
@@ -679,14 +695,14 @@ useEffect(() => {
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <button onClick={() => fileRef.current?.click()} disabled={avatarUploading}
+                    <button type="button" onClick={() => fileRef.current?.click()} disabled={avatarUploading}
                       className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-white shadow hover:bg-brand-700 transition-colors disabled:opacity-50">
                       {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
                     </button>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-ink">Profile Photo</p>
-                    <button onClick={() => fileRef.current?.click()} disabled={avatarUploading}
+                    <button type="button" onClick={() => fileRef.current?.click()} disabled={avatarUploading}
                       className="text-xs text-brand-600 hover:underline mt-0.5 disabled:opacity-50">
                       {avatarUploading ? "Uploading…" : "Change photo"}
                     </button>
