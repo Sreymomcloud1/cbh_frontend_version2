@@ -7,7 +7,6 @@ import type {
 } from "@/validators/request.validators";
 import { NotFoundError, ForbiddenError } from "@/lib/errors";
 import { supabaseAdmin } from "@/lib/supabase";
-import { sendMessageNotification } from "@/lib/email";
 
 const REWARD_POINTS = {
   request_sent:    5,
@@ -99,11 +98,6 @@ export class RequestService {
 
   async createRequest(buyerId: string, input: CreateRequestInput) {
     const bizId = input.business_id && input.business_id.trim() !== "" ? input.business_id : null;
-    const { data: buyerProfile } = await this.db
-      .from("profiles")
-      .select("name, email")
-      .eq("id", buyerId)
-      .maybeSingle();
 
     const { data: request, error } = await this.db
       .from("requests")
@@ -143,41 +137,29 @@ export class RequestService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const c = conv as any;
         await this.db.from("requests").update({ conversation_id: c.id }).eq("id", req.id);
+        const initialMessage = [
+          `New ${input.purpose} request`,
+          `Product/Service: ${input.product}`,
+          input.quantity ? `Quantity: ${input.quantity}` : null,
+          `Required date: ${input.required_date}`,
+          `Location: ${input.location}`,
+          input.notes?.trim() ? `Notes: ${input.notes.trim()}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        await this.db.from("messages").insert({
+          conversation_id: c.id,
+          sender_id: buyerId,
+          content: initialMessage,
+          is_read: false,
+        });
+
         conversation = conv;
       }
     }
 
     await this.awardPoints(buyerId, "request_sent", REWARD_POINTS.request_sent, req.id);
-
-    // Email notification to business
-    if (bizId) {
-      try {
-        const { data: biz } = await this.db
-          .from("businesses")
-          .select("name, contact_email, notify_by_email")
-          .eq("id", bizId)
-          .maybeSingle();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const b = biz as any;
-        if (b?.notify_by_email && b?.contact_email) {
-          const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const buyer = (buyerProfile ?? {}) as any;
-          await sendMessageNotification({
-            businessEmail:  b.contact_email,
-            businessName:   b.name,
-            senderName:     buyer.name ?? "A buyer on CBH",
-            senderEmail:    buyer.email ?? "",
-            messageContent: `New ${input.purpose} request for: ${input.product}. Log in to your dashboard to view and reply.`,
-            product:        input.product,
-            purpose:        input.purpose,
-            loginUrl:       `${siteUrl}/auth/login`,
-          });
-        }
-      } catch (e) {
-        console.warn("Request notification email failed:", (e as Error).message);
-      }
-    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return { request: { ...req, conversation_id: (conversation as any)?.id ?? null }, conversation };
