@@ -546,8 +546,15 @@ export default function AdminPage() {
   if (!addBizForm.name || !addBizForm.category || !addBizForm.contact_email || !addBizForm.contact_phone || !addBizForm.location_city) {
     showToast("Name, category, city, email and phone are required.", false); return;
   }
-  if (!addBizForm.facebook_url.trim() && !addBizForm.telegram_url.trim()) {
-    showToast("Add at least one verification contact: Facebook URL or Telegram URL.", false); return;
+  const fb = addBizForm.facebook_url.trim();
+  if (!fb) {
+    showToast("Facebook Page URL is required.", false); return;
+  }
+  try {
+    // Ensures admins paste a usable link before POST (backend also validates)
+    void new URL(fb.startsWith("http") ? fb : `https://${fb}`);
+  } catch {
+    showToast("Enter a valid Facebook Page URL (including https://).", false); return;
   }
   setAddBizSaving(true);
   const payload = {
@@ -571,7 +578,7 @@ export default function AdminPage() {
     contact_email: addBizForm.contact_email.trim(),
     contact_phone: addBizForm.contact_phone.trim(),
     tax_id: addBizForm.tax_id.trim() || undefined,
-    facebook_url: addBizForm.facebook_url.trim() || undefined,
+    facebook_url: addBizForm.facebook_url.trim(),
     telegram_url: addBizForm.telegram_url.trim() || undefined,
     website_url: addBizForm.website_url.trim() || undefined,
     open_for_collaboration: addBizForm.open_for_collaboration,
@@ -1007,7 +1014,7 @@ export default function AdminPage() {
           { label: "Tagline",            key: "tagline",        ph: "Short one-liner"              },
           { label: "Contact Email *",    key: "contact_email",  ph: "business@email.com"           },
           { label: "Phone *",            key: "contact_phone",  ph: "+855 12 000 000"              },
-          { label: "Facebook Page URL",  key: "facebook_url",   ph: "https://facebook.com/page"    },
+          { label: "Facebook Page URL *",  key: "facebook_url",   ph: "https://facebook.com/your-page" },
           { label: "Telegram",           key: "telegram_url",   ph: "https://t.me/username"        },
           { label: "Website",            key: "website_url",    ph: "https://yourbusiness.com"     },
           { label: "City *",             key: "location_city",  ph: "Phnom Penh"                   },

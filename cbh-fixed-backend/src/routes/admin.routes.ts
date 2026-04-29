@@ -477,7 +477,12 @@ const createBusinessSchema = z.object({
   contact_email: z.string().email(),
   contact_phone: z.string().min(1).max(40),
   website_url: z.string().url().max(500).optional(),
-  facebook_url: z.string().url().max(500).optional(),
+  facebook_url: z
+    .string()
+    .trim()
+    .min(1, "Facebook Page URL is required")
+    .url("Facebook Page URL must be a valid URL")
+    .max(500),
   telegram_url: z.string().url().max(500).optional(),
   tax_id: z.string().max(120).optional(),
   open_for_collaboration: z.boolean().optional(),
@@ -489,16 +494,6 @@ const createBusinessSchema = z.object({
   founded_year: z.number().int().min(1900).max(2100).optional(),
   notify_by_email: z.boolean().optional(),
   notify_by_phone: z.boolean().optional(),
-}).superRefine((data, ctx) => {
-  const hasFacebook = Boolean(data.facebook_url && data.facebook_url.trim());
-  const hasTelegram = Boolean(data.telegram_url && data.telegram_url.trim());
-  if (!hasFacebook && !hasTelegram) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["facebook_url"],
-      message: "At least one verification contact is required: Facebook URL or Telegram URL.",
-    });
-  }
 });
 
 function generateOwnerTempPassword(): string {
@@ -648,7 +643,7 @@ router.post("/businesses/create", validate(createBusinessSchema), async (req, re
         contact_email:        body.contact_email,
         contact_phone:        body.contact_phone,
         tax_id:               body.tax_id               ?? null,
-        facebook_url:         body.facebook_url         ?? null,
+        facebook_url:         body.facebook_url,
         telegram_url:         body.telegram_url         ?? null,
         website_url:          body.website_url          ?? null,
         open_for_collaboration: body.open_for_collaboration ?? false,
