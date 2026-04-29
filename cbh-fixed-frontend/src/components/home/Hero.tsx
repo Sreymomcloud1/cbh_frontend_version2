@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Send, X, Store, MapPin, Leaf } from "lucide-react";
 import { heroBanners } from "@/data/mockData";
 import { cn } from "@/lib/utils";
@@ -278,10 +279,7 @@ Rules:
                         {msg.suppliers.map(s => (
                           <div key={s.id} className="bg-white border border-surface-200 rounded-2xl p-3 flex items-center gap-3 hover:border-brand-300 transition-colors">
                             <div className="w-10 h-10 rounded-xl bg-surface-100 overflow-hidden shrink-0">
-                              {s.logo
-                                ? <img src={s.logo} alt={s.name} className="w-full h-full object-cover" />
-                                : <div className="w-full h-full flex items-center justify-center text-brand-600 font-bold">{s.name[0]}</div>
-                              }
+                              <BusinessMedia fit="avatar" src={s.logo} alt={s.name} name={s.name} className="h-full w-full" avatarTextClassName="text-sm" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold text-ink truncate">{s.name}</p>

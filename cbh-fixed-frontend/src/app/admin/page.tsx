@@ -13,6 +13,7 @@ import { getAccessToken } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { notifyBusinessDataChanged, onBusinessDataChanged } from "@/lib/data-events";
 import { logoutAndRefresh } from "@/lib/logout";
+import { BusinessMedia } from "@/components/ui/BusinessMedia";
 //import { Users, Clock } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -173,10 +174,13 @@ function BusinessModal({
           {(biz.gallery_urls?.length > 0 || biz.logo_url) && (
             <div className="space-y-2">
               <div className="rounded-xl overflow-hidden h-52 bg-stone-800">
-                <img
-                  src={biz.gallery_urls?.[activeImg] ?? biz.logo_url ?? ""}
+                <BusinessMedia
+                  fit="cover"
+                  src={biz.gallery_urls?.[activeImg] ?? biz.logo_url}
                   alt={biz.name}
-                  className="w-full h-full object-cover"
+                  name={biz.name}
+                  className="h-full w-full"
+                  placeholderTone="dark"
                 />
               </div>
               {biz.gallery_urls?.length > 1 && (
@@ -185,7 +189,7 @@ function BusinessModal({
                     <button key={i} onClick={() => setActiveImg(i)}
                       className={cn("w-14 h-14 rounded-lg overflow-hidden border-2 transition-all",
                         activeImg === i ? "border-brand-500" : "border-stone-700 opacity-60 hover:opacity-100")}>
-                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <BusinessMedia fit="avatar" src={url} alt="" name={biz.name} className="h-full w-full" placeholderTone="dark" avatarTextClassName="text-xs" />
                     </button>
                   ))}
                 </div>
@@ -802,10 +806,15 @@ export default function AdminPage() {
                           <div className="grid grid-cols-12 gap-4 px-5 py-4 items-center">
                             <div className="col-span-4 flex items-center gap-3 min-w-0">
                               <div className="w-8 h-8 rounded-lg bg-stone-800 overflow-hidden shrink-0">
-                                {b.logo_url
-                                  ? <img src={b.logo_url} alt="" className="w-full h-full object-cover" />
-                                  : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-stone-400">{b.name[0]}</div>
-                                }
+                                <BusinessMedia
+                                  fit="avatar"
+                                  src={b.logo_url}
+                                  alt=""
+                                  name={b.name}
+                                  className="h-full w-full"
+                                  placeholderTone="dark"
+                                  avatarTextClassName="text-xs"
+                                />
                               </div>
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-white truncate">{b.name}</p>
