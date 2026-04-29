@@ -1,9 +1,35 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { resolveDashboardPath } from "@/lib/auth-routing";
 import { Loader2, Lock, Eye, EyeOff, CheckCircle, Leaf } from "lucide-react";
+
+/** Serialize recovery bootstrap across React Strict Mode double-invoke / overlapping effects. */
+let recoveryAuthChain: Promise<void> = Promise.resolve();
+
+function enqueueRecoveryAuth(task: () => Promise<void>): Promise<void> {
+  recoveryAuthChain = recoveryAuthChain.then(task).catch(() => {});
+  return recoveryAuthChain;
+}
+
+/** Supabase recovery links put access/refresh tokens in the hash; apply them explicitly (avoids races with detectSessionInUrl). */
+async function applySessionFromHashIfPresent(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const raw = window.location.hash.replace(/^#/, "").trim();
+  if (!raw) return;
+  const params = new URLSearchParams(raw);
+  const access_token = params.get("access_token");
+  const refresh_token = params.get("refresh_token");
+  if (!access_token || !refresh_token) return;
+  const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+  if (error) {
+    console.warn("[reset-password] setSession from hash:", error.message);
+    return;
+  }
+  const clean = window.location.pathname + window.location.search;
+  window.history.replaceState(null, document.title, clean);
+}
 
 function ResetContent() {
   const router = useRouter();
@@ -14,10 +40,15 @@ function ResetContent() {
   const [saving,  setSaving]  = useState(false);
   const [done,    setDone]    = useState(false);
   const [error,   setError]   = useState("");
+  const readyRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
-    const safeSetReady = (value: boolean) => { if (mounted) setReady(value); };
+    const safeSetReady = (value: boolean) => {
+      if (!mounted) return;
+      readyRef.current = value;
+      setReady(value);
+    };
     const safeSetError = (value: string) => { if (mounted) setError(value); };
 
     const bootstrap = async () => {
@@ -25,38 +56,53 @@ function ResetContent() {
         const query = new URLSearchParams(window.location.search);
         const code = query.get("code");
         if (code) {
-          await supabase.auth.exchangeCodeForSession(code).catch(() => null);
+          const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+          if (exErr) console.warn("[reset-password] exchangeCodeForSession:", exErr.message);
+          else window.history.replaceState(null, document.title, window.location.pathname);
         }
 
+        await applySessionFromHashIfPresent();
+
         const { data: { session } } = await supabase.auth.getSession();
-        const hash = window.location.hash || "";
-        const likelyRecoveryLink = hash.includes("type=recovery") || hash.includes("access_token");
-        if (session || likelyRecoveryLink) {
+        if (session) {
           safeSetReady(true);
           return;
         }
-      } catch {
-        // continue to error fallback
+      } catch (e) {
+        console.warn("[reset-password] bootstrap", e);
       }
-
-      safeSetError("Reset link is invalid or expired. Please request a new reset email.");
+      // Do not set error here: PASSWORD_RECOVERY may still fire shortly after.
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY" || (!!session && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED"))) {
-        safeSetReady(true);
-      }
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    void enqueueRecoveryAuth(async () => {
+      if (!mounted) return;
+      await bootstrap();
+      if (!mounted) return;
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          safeSetReady(true);
+          return;
+        }
+        if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
+          safeSetReady(true);
+        }
+      });
+      if (!mounted) return;
+      subscription = data.subscription;
     });
 
-    bootstrap();
     const timeout = setTimeout(() => {
-      if (!ready) safeSetError("Reset link is invalid or expired. Please request a new reset email.");
-    }, 7000);
+      if (!readyRef.current) {
+        safeSetError("Reset link is invalid or expired. Please request a new reset email.");
+      }
+    }, 10000);
 
     return () => {
       mounted = false;
       clearTimeout(timeout);
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

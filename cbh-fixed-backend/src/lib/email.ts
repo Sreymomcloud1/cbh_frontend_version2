@@ -14,6 +14,18 @@ function createTransporter() {
 const FROM = env.SMTP_FROM ?? `"CBH Platform" <${env.SMTP_USER}>`;
 const SITE = env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
+export function isSmtpConfigured(): boolean {
+  return Boolean(env.SMTP_USER && env.SMTP_PASS);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 // ── Shared button HTML ────────────────────────────────────────────────────────
 function ctaButton(url: string, label: string) {
   return `<a href="${url}" style="display:inline-block;background:#16a34a;color:#fff;padding:13px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin-top:8px">${label} →</a>`;
@@ -138,6 +150,104 @@ export async function notifyBuyer(data: ToBuyerNotification) {
 export interface WelcomeEmailData {
   toEmail: string; name: string; role: "buyer" | "business"; loginUrl: string;
 }
+export interface AdminCreatedOwnerCredentialsEmail {
+  toEmail: string;
+  recipientName: string;
+  businessName: string;
+  temporaryPassword: string;
+  loginUrl: string;
+}
+
+/** Sends generated login credentials after an admin creates a business for a new owner. */
+export async function sendAdminCreatedOwnerCredentialsEmail(data: AdminCreatedOwnerCredentialsEmail): Promise<void> {
+  const t = createTransporter();
+  if (!t) throw new Error("SMTP is not configured");
+  await t.sendMail({
+    from: FROM,
+    to: data.toEmail,
+    subject: `Your CBH business account — ${data.businessName}`,
+    html: emailWrap(`
+      <h2 style="margin:0 0 8px;color:#111">Your business account is ready</h2>
+      <p style="color:#6b7280;margin:0 0 16px">Hi ${escapeHtml(data.recipientName)},</p>
+      <p style="color:#6b7280;margin:0 0 16px">A CBH administrator registered <strong>${escapeHtml(data.businessName)}</strong> for you. Use the credentials below to sign in.</p>
+      <div style="background:#f3f4f6;border-radius:12px;padding:16px;margin:16px 0;font-size:14px">
+        <p style="margin:0 0 8px"><strong>Email:</strong> ${escapeHtml(data.toEmail)}</p>
+        <p style="margin:0"><strong>Temporary password:</strong> <code style="background:#e5e7eb;padding:4px 8px;border-radius:6px;font-size:13px;word-break:break-all">${escapeHtml(data.temporaryPassword)}</code></p>
+      </div>
+      <p style="color:#92400e;font-size:13px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px">Please change this password after you sign in (account / security settings).</p>
+      ${ctaButton(data.loginUrl, "Sign in to CBH")}
+    `),
+  });
+}
+
+export interface BusinessVerificationApprovedEmail {
+  toEmail: string;
+  ownerName: string;
+  businessName: string;
+  dashboardUrl: string;
+}
+
+/** Sent when an admin verifies / publishes a business listing. */
+export async function sendBusinessVerificationApprovedEmail(data: BusinessVerificationApprovedEmail): Promise<void> {
+  const t = createTransporter();
+  if (!t) {
+    console.warn("SMTP not configured — verification approval email skipped");
+    return;
+  }
+  await t.sendMail({
+    from: FROM,
+    to: data.toEmail,
+    subject: `Your listing “${data.businessName}” is verified — CBH`,
+    html: emailWrap(`
+      <h2 style="margin:0 0 8px;color:#111">Your business is verified ✓</h2>
+      <p style="color:#6b7280;margin:0 0 16px">Hi ${escapeHtml(data.ownerName)},</p>
+      <p style="color:#6b7280;margin:0 0 16px">Good news — <strong>${escapeHtml(data.businessName)}</strong> has been reviewed and <strong>approved</strong> on CBH. Your listing can now appear to buyers on the marketplace.</p>
+      ${ctaButton(data.dashboardUrl, "Open business dashboard")}
+      <p style="font-size:12px;color:#9ca3af;margin-top:16px">Log in with your account if prompted.</p>
+    `),
+  });
+}
+
+export interface BusinessVerificationRejectedEmail {
+  toEmail: string;
+  ownerName: string;
+  businessName: string;
+  /** What happened: registration rejected, or verification revoked after approval */
+  kind: "rejected" | "revoked";
+  reason: string;
+  loginUrl: string;
+}
+
+/** Sent when an admin rejects a pending registration or revokes verification. */
+export async function sendBusinessVerificationRejectedEmail(data: BusinessVerificationRejectedEmail): Promise<void> {
+  const t = createTransporter();
+  if (!t) {
+    console.warn("SMTP not configured — verification rejection email skipped");
+    return;
+  }
+  const verb = data.kind === "revoked" ? "verification was revoked" : "registration was not approved";
+  const subject =
+    data.kind === "revoked"
+      ? `Verification update for “${data.businessName}” — CBH`
+      : `Update on your CBH listing “${data.businessName}”`;
+  await t.sendMail({
+    from: FROM,
+    to: data.toEmail,
+    subject,
+    html: emailWrap(`
+      <h2 style="margin:0 0 8px;color:#111">${data.kind === "revoked" ? "Verification revoked" : "Listing not approved"}</h2>
+      <p style="color:#6b7280;margin:0 0 16px">Hi ${escapeHtml(data.ownerName)},</p>
+      <p style="color:#6b7280;margin:0 0 16px">Your listing <strong>${escapeHtml(data.businessName)}</strong> ${verb} following admin review.</p>
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px;margin:16px 0">
+        <p style="margin:0 0 6px;font-size:13px;color:#991b1b;font-weight:600">Reason</p>
+        <p style="margin:0;color:#444;font-size:14px;white-space:pre-wrap">${escapeHtml(data.reason)}</p>
+      </div>
+      <p style="color:#6b7280;margin:0 0 16px;font-size:14px">You can sign in to review your profile or contact support if you have questions.</p>
+      ${ctaButton(data.loginUrl, "Sign in to CBH")}
+    `),
+  });
+}
+
 export async function sendWelcomeEmail(data: WelcomeEmailData) {
   const t = createTransporter();
   if (!t) return;

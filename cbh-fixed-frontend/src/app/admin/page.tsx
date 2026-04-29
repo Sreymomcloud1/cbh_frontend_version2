@@ -294,10 +294,15 @@ function BusinessModal({
             {confirmAction ? (
               <div className="space-y-3">
                 <p className="text-sm text-stone-300">
-                  Provide a reason for {confirmAction === "reject" ? "rejecting" : "revoking"} this business:
+                  {confirmAction === "reject"
+                    ? "Provide a rejection reason (required). It will be saved and emailed to the business contact."
+                    : "Provide a reason for revoking verification (required). It will be saved and emailed to the business contact."}
                 </p>
-                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
-                  placeholder="e.g. Incomplete information, fake business, policy violation…"
+                <label className="block text-xs font-semibold text-stone-400">
+                  {confirmAction === "reject" ? "Rejection reason" : "Revocation reason"} <span className="text-red-400">*</span>
+                </label>
+                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
+                  placeholder="e.g. Incomplete information, documents did not match registration, policy violation…"
                   className="w-full rounded-xl border border-stone-700 bg-stone-800 px-3 py-2.5 text-sm text-white outline-none focus:border-red-500 placeholder:text-stone-600" />
                 <div className="flex gap-2">
                   <button onClick={() => setConfirmAction(null)}
@@ -313,6 +318,12 @@ function BusinessModal({
                 </div>
               </div>
             ) : (
+              <div className="space-y-3">
+                {(biz.verification_status === "pending" || biz.verification_status === "rejected" || biz.verification_status === "revoked") && (
+                  <p className="text-xs text-stone-500">
+                    Approving publishes the listing and emails the business contact. Reject or revoke requires a reason and emails the owner.
+                  </p>
+                )}
               <div className="flex flex-wrap gap-2">
                 {biz.verification_status !== "verified" && (
                   <button onClick={() => doAction("verify")} disabled={actionLoading}
@@ -340,6 +351,7 @@ function BusinessModal({
                     Re-verify
                   </button>
                 )}
+              </div>
               </div>
             )}
           </div>
@@ -556,7 +568,19 @@ export default function AdminPage() {
     notifyBusinessDataChanged({ id: res.data?.id, action: "created" });
     setTab("businesses");
     router.replace("/admin");
-    showToast("Business added — pending verification.", true);
+    const emailed = Boolean(res.data?.ownerCredentialsEmailed);
+    const emailErr = res.data?.ownerCredentialsEmailError as string | undefined;
+    const contact = payload.contact_email;
+    if (emailErr) {
+      showToast(
+        `Business added (pending verification), but login email failed: ${emailErr}. The owner can use “Forgot password” for ${contact}.`,
+        false,
+      );
+    } else if (emailed) {
+      showToast(`Business added — pending verification. Login details were sent to ${contact}.`, true);
+    } else {
+      showToast("Business added — pending verification.", true);
+    }
     setShowAddBiz(false);
     setAddBizForm({
       name: "", tagline: "", description: "", category: "", tier: "SME", sub_categories: "",
