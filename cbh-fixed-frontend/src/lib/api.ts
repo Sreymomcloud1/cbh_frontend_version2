@@ -130,6 +130,7 @@ export function businessToSupplier(b: any): Supplier {
     reviewCount: b.review_count ?? 0,
     // Extra fields the dashboard needs — passed through as-is
     verificationStatus: b.verification_status ?? "pending",
+    rejectionReason:    b.rejection_reason ?? undefined,
     isActive:           b.is_active           ?? false,
     notifyByEmail:      b.notify_by_email      ?? true,
     notifyByPhone:      b.notify_by_phone      ?? false,

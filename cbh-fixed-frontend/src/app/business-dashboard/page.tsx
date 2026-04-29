@@ -25,7 +25,6 @@ import EcoScoreQuestionnaire from "@/components/eco/EcoScoreQuestionnaire";
 import { BusinessMedia } from "@/components/ui/BusinessMedia";
 import type { Supplier, QuoteRequest } from "@/types";
 import { Suspense } from "react";
-import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 type Tab = "overview" | "messages" | "settings";
@@ -35,6 +34,28 @@ const nav: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "messages",  label: "Messages", icon: MessageCircle },
   { id: "settings",  label: "Settings", icon: Settings },
 ];
+
+/** Listing is hidden from Explore until verification passes */
+function listingNotPublic(biz: Supplier): boolean {
+  return ["pending", "rejected", "revoked"].includes(String(biz.verificationStatus ?? "pending"));
+}
+
+function verificationSidebarBadge(biz: Supplier): { label: string; className: string } {
+  const v = String(biz.verificationStatus ?? "pending");
+  if (biz.verified || v === "verified" || v === "approved") {
+    return { label: "Verified", className: "bg-brand-50 text-brand-600 border-brand-200" };
+  }
+  if (v === "pending") {
+    return { label: "Pending review", className: "bg-amber-50 text-amber-800 border-amber-200" };
+  }
+  if (v === "rejected") {
+    return { label: "Not approved", className: "bg-red-50 text-red-700 border-red-200" };
+  }
+  if (v === "revoked") {
+    return { label: "Unpublished", className: "bg-stone-100 text-stone-700 border-stone-200" };
+  }
+  return { label: "Pending review", className: "bg-amber-50 text-amber-800 border-amber-200" };
+}
 
 function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
@@ -46,32 +67,6 @@ function Toast({ msg, ok, onDone }: { msg: string; ok: boolean; onDone: () => vo
       {ok ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
       {msg}
       <button onClick={onDone}><X className="w-3 h-3 ml-1 opacity-50" /></button>
-    </div>
-  );
-}
-
-function PendingApprovalPage() {
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4">
-      <div className="max-w-md text-center">
-        <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center mx-auto mb-6">
-          <Clock className="w-9 h-9 text-amber-500" />
-        </div>
-        <h1 className="font-display text-2xl text-ink mb-3">Pending Admin Approval</h1>
-        <p className="text-ink-muted text-sm leading-relaxed mb-4">
-          Your business registration is under review. Once an admin approves it, your business
-          will appear publicly in Explore Suppliers and you'll get full dashboard access.
-        </p>
-        <p className="text-xs text-ink-faint">
-          You'll receive an email at your registered address when approved.
-        </p>
-        <div className="mt-6">
-          <Link href="/"
-            className="inline-flex items-center gap-2 text-brand-600 hover:underline text-sm font-medium">
-            ← Back to home
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }
@@ -135,7 +130,6 @@ function BusinessDashboardInner() {
   const [biz,      setBiz]      = useState<Supplier | null>(null);
   const [requests, setRequests] = useState<QuoteRequest[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [isPending,setIsPending]= useState(false);
   const [toast,    setToast]    = useState<{ msg: string; ok: boolean } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -190,14 +184,15 @@ function BusinessDashboardInner() {
         router.push("/business/register");
         return;
       }
-      const vs = business.verificationStatus ?? "pending";
-      const isPendingStatus = ["pending", "rejected", "revoked"].includes(vs);
-      setIsPending(isPendingStatus);
       setBiz(business);
 
-      const reqs = isPendingStatus
-        ? []
-        : (await listBusinessRequests(business.id, { limit: 50 })).requests ?? [];
+      let reqs: QuoteRequest[] = [];
+      try {
+        const listed = await listBusinessRequests(business.id, { limit: 50 });
+        reqs = listed.requests ?? [];
+      } catch {
+        reqs = [];
+      }
       setRequests(reqs);
 
       setEName(business.name);
@@ -360,8 +355,10 @@ function BusinessDashboardInner() {
     );
   }
 
-  if (isPending) return <PendingApprovalPage />;
   if (!biz) return null;
+
+  const verBadge = verificationSidebarBadge(biz);
+  const vs = String(biz.verificationStatus ?? "pending");
 
   const buyReqs    = requests.filter(r => r.purpose === "buy").length;
   const collabReqs = requests.filter(r => r.purpose === "collaborate").length;
@@ -399,6 +396,64 @@ function BusinessDashboardInner() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
 
+      {listingNotPublic(biz) && (
+        <div
+          className={cn(
+            "mb-6 rounded-2xl border p-4 sm:p-5 flex gap-3 sm:gap-4",
+            vs === "pending" && "border-amber-200 bg-amber-50/90",
+            vs === "rejected" && "border-red-200 bg-red-50/90",
+            vs === "revoked" && "border-stone-300 bg-stone-50"
+          )}
+        >
+          <div className="shrink-0 mt-0.5">
+            {vs === "pending" ? (
+              <Clock className="w-5 h-5 text-amber-600" />
+            ) : (
+              <AlertCircle className={cn("w-5 h-5", vs === "rejected" ? "text-red-600" : "text-stone-600")} />
+            )}
+          </div>
+          <div className="min-w-0 text-sm">
+            {vs === "pending" && (
+              <>
+                <p className="font-semibold text-ink mb-1">Pending admin approval</p>
+                <p className="text-ink-muted leading-relaxed">
+                  Your listing is under review. You can use your dashboard, profile, and messages now;
+                  once an admin approves your business, it will appear in Explore Suppliers.
+                </p>
+              </>
+            )}
+            {vs === "rejected" && (
+              <>
+                <p className="font-semibold text-ink mb-1">Registration not approved</p>
+                <p className="text-ink-muted leading-relaxed">
+                  Your business is not listed publicly. Update your profile if needed and contact support if you have questions.
+                </p>
+                {biz.rejectionReason ? (
+                  <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-red-100 px-3 py-2">
+                    <span className="font-medium text-ink">Reason: </span>
+                    {biz.rejectionReason}
+                  </p>
+                ) : null}
+              </>
+            )}
+            {vs === "revoked" && (
+              <>
+                <p className="font-semibold text-ink mb-1">Listing unpublished</p>
+                <p className="text-ink-muted leading-relaxed">
+                  Your business is no longer shown in Explore Suppliers. You still have access to your dashboard here.
+                </p>
+                {biz.rejectionReason ? (
+                  <p className="mt-2 text-ink text-xs rounded-lg bg-white/80 border border-stone-200 px-3 py-2">
+                    <span className="font-medium text-ink">Note: </span>
+                    {biz.rejectionReason}
+                  </p>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-8">
         {/* Sidebar */}
         <aside className="hidden md:flex flex-col w-52 shrink-0">
@@ -408,8 +463,8 @@ function BusinessDashboardInner() {
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-ink text-sm truncate">{eName}</p>
-              <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full border border-brand-200">
-                ✓ Verified
+              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full border", verBadge.className)}>
+                {verBadge.label}
               </span>
             </div>
           </div>
